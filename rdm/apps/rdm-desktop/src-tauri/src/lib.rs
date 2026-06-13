@@ -138,6 +138,7 @@ fn quit_app(app: &AppHandle) {
     };
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        log::info!("Shutting down: persisting in-flight downloads");
         manager.shutdown().await;
         app.exit(0);
     });
@@ -198,6 +199,23 @@ pub fn run() {
     }
 
     builder
+        // Rotating log file in the app log dir (ports PyDM's configure_logging):
+        // when `rdm.log` exceeds the size cap it is rotated and only the most
+        // recent backup is kept, so disk use stays bounded. Also mirrors to
+        // stdout for `app:dev`.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("rdm".into()),
+                    }),
+                ])
+                .level(log::LevelFilter::Info)
+                .max_file_size(2_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -225,40 +243,15 @@ pub fn run() {
                 force_quit: AtomicBool::new(false),
             });
 
+            log::info!(
+                "RDM started; {} task(s) restored from database",
+                app.state::<AppState>().manager.all_tasks().len()
+            );
+
             build_tray(app.handle())?;
 
             // Open the add dialog if launched with a URL argument.
             if let Some(url) = first_http_url(&std::env::args().collect::<Vec<_>>()) {
                 let _ = app.handle().emit("rdm://open-url", url);
             }
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                let state = window.state::<AppState>();
-                let minimize = state.manager.settings().minimize_to_tray;
-                if minimize && !state.force_quit.load(Ordering::SeqCst) {
-                    // Keep downloading in the background.
-                    api.prevent_close();
-                    let _ = window.hide();
-                } else {
-                    // Exit only after engines have wound down.
-                    api.prevent_close();
-                    quit_app(window.app_handle());
-                }
-            }
-        })
-        .invoke_handler(tauri::generate_handler![
-            list_tasks,
-            get_settings,
-            add_download,
-            start_task,
-            pause_task,
-            cancel_task,
-            delete_task,
-            save_settings,
-            open_folder,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running RDM desktop");
-}
+            O
