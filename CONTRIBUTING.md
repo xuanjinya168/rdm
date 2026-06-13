@@ -1,13 +1,13 @@
 # Contributing
 
-RDM 是一个 Rust workspace(`rdm/`)加一个 Tauri + Svelte 桌面应用
-(`rdm/apps/rdm-desktop/`)。
+RDM 是一个 Rust workspace 加一个 Tauri + Svelte 桌面应用
+(`apps/rdm-desktop/`)。
 
 ## 环境
 
-- Rust stable(后端 workspace,见 `rdm/rust-toolchain.toml`)
+- Rust stable(后端 workspace,见 `rust-toolchain.toml`)
 - Node ≥ 18(桌面前端)
-- 桌面应用的 Rust 端固定 1.88.0(见 `rdm/apps/rdm-desktop/src-tauri/rust-toolchain.toml`
+- 桌面应用的 Rust 端固定 1.88.0(见 `apps/rdm-desktop/src-tauri/rust-toolchain.toml`
   及该处「构建约束」注释——不要在 `src-tauri` 下 `cargo update`)
 
 ## 提交前必跑
@@ -15,7 +15,6 @@ RDM 是一个 Rust workspace(`rdm/`)加一个 Tauri + Svelte 桌面应用
 后端:
 
 ```powershell
-cd rdm
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
@@ -24,7 +23,7 @@ cargo test
 桌面前端:
 
 ```powershell
-cd rdm/apps/rdm-desktop
+cd apps/rdm-desktop
 npm run build
 ```
 

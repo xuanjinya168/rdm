@@ -33,4 +33,6 @@ rdm-service = { path = "../../../crates/rdm-service" }
 tauri-plugin-single-instance = "2"
 
 [features]
-custom-protocol = ["ta
+custom-protocol = ["tauri/custom-protocol"]
+
+[workspace]

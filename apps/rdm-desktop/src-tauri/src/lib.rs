@@ -254,4 +254,34 @@ pub fn run() {
             if let Some(url) = first_http_url(&std::env::args().collect::<Vec<_>>()) {
                 let _ = app.handle().emit("rdm://open-url", url);
             }
-            O
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<AppState>();
+                let minimize = state.manager.settings().minimize_to_tray;
+                if minimize && !state.force_quit.load(Ordering::SeqCst) {
+                    // Keep downloading in the background.
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    // Exit only after engines have wound down.
+                    api.prevent_close();
+                    quit_app(window.app_handle());
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            list_tasks,
+            get_settings,
+            add_download,
+            start_task,
+            pause_task,
+            cancel_task,
+            delete_task,
+            save_settings,
+            open_folder,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running RDM desktop");
+}

@@ -4,10 +4,10 @@ target/
 
 # Node / frontend
 node_modules/
-rdm/apps/rdm-desktop/dist/
+apps/rdm-desktop/dist/
 
 # Tauri generated
-rdm/apps/rdm-desktop/src-tauri/gen/
+apps/rdm-desktop/src-tauri/gen/
 
 # Downloads / partial files
 downloads/

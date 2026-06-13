@@ -1,4 +1,0 @@
-/target
-**/*.rs.bk
-# Cargo.lock is committed: apps/rdm-desktop/src-tauri/Cargo.lock pins `time`
-# down to 0.3.36 (see its rust-toolchain.toml). Do not ignore lockfiles.

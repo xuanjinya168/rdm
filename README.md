@@ -19,7 +19,6 @@ RDM 是一个 Windows HTTP/HTTPS 多连接分段下载管理器,使用 **Rust** 
 ## 项目结构
 
 ```
-rdm/
 ├─ crates/
 │  ├─ rdm-domain     领域模型、校验、分段规划、配置(纯逻辑)
 │  ├─ rdm-storage    SQLite 持久化 + 迁移
@@ -36,10 +35,9 @@ rdm/
 
 ### 后端(Rust workspace)
 
-需要 Rust stable(见 `rdm/rust-toolchain.toml`)。
+需要 Rust stable(见 `rust-toolchain.toml`)。
 
 ```powershell
-cd rdm
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
@@ -47,18 +45,17 @@ cargo fmt --check
 
 ### 桌面应用
 
-需要 Node ≥ 18。Tauri 端的工具链由 `rdm/apps/rdm-desktop/src-tauri/rust-toolchain.toml`
+需要 Node ≥ 18。Tauri 端的工具链由 `apps/rdm-desktop/src-tauri/rust-toolchain.toml`
 固定(详见该目录 README 的「构建约束」)。
 
 ```powershell
-cd rdm/apps/rdm-desktop
+cd apps/rdm-desktop
 npm install
 npm run app:dev      # 开发(热重载)
 npm run app:build    # 生成自包含 EXE: src-tauri/target/release/rdm-desktop.exe
 ```
 
-详见 [`rdm/README.md`](rdm/README.md) 与
-[`rdm/apps/rdm-desktop/README.md`](rdm/apps/rdm-desktop/README.md)。
+详见 [`apps/rdm-desktop/README.md`](apps/rdm-desktop/README.md)。
 
 ## 数据目录
 
