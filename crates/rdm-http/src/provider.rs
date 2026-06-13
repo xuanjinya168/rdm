@@ -5,6 +5,7 @@
 //! sources. Plain HTTP/HTTPS is handled by the built-in [`HttpDownloadProvider`].
 
 use rdm_domain::DownloadTask;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, IF_RANGE, RANGE};
 use url::Url;
 
 use crate::error::HttpError;
@@ -23,6 +24,23 @@ impl PreparedDownload {
             url: url.into(),
             headers: Vec::new(),
         }
+    }
+
+    /// Validate provider headers and convert them to the representation used by
+    /// reqwest. Range and encoding headers remain owned by the engine.
+    pub fn request_headers(&self) -> Result<HeaderMap, HttpError> {
+        let mut headers = HeaderMap::new();
+        for (raw_name, raw_value) in &self.headers {
+            let name = HeaderName::from_bytes(raw_name.as_bytes())
+                .map_err(|_| HttpError::InvalidHeaderName(raw_name.clone()))?;
+            if name == RANGE || name == IF_RANGE || name == ACCEPT_ENCODING {
+                return Err(HttpError::ForbiddenHeader(raw_name.clone()));
+            }
+            let value = HeaderValue::from_str(raw_value)
+                .map_err(|_| HttpError::InvalidHeaderValue(raw_name.clone()))?;
+            headers.append(name, value);
+        }
+        Ok(headers)
     }
 }
 
@@ -152,5 +170,32 @@ mod tests {
             .unwrap();
         assert_eq!(prepared.url, "https://signed.example/x");
         assert_eq!(prepared.headers.len(), 1);
+    }
+
+    #[test]
+    fn validates_and_restricts_provider_headers() {
+        let prepared = PreparedDownload {
+            url: "https://example.test/file".to_string(),
+            headers: vec![("Authorization".to_string(), "Bearer token".to_string())],
+        };
+        assert_eq!(
+            prepared
+                .request_headers()
+                .unwrap()
+                .get("authorization")
+                .unwrap(),
+            "Bearer token"
+        );
+
+        for forbidden in ["Range", "If-Range", "Accept-Encoding"] {
+            let prepared = PreparedDownload {
+                url: "https://example.test/file".to_string(),
+                headers: vec![(forbidden.to_string(), "value".to_string())],
+            };
+            assert!(matches!(
+                prepared.request_headers(),
+                Err(HttpError::ForbiddenHeader(_))
+            ));
+        }
     }
 }

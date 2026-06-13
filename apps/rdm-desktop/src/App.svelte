@@ -31,6 +31,7 @@
     ACTIVE_STATUSES,
     ACTIVE_FILTER_STATUSES,
   } from "./lib/format.js";
+  import { mergeTaskSnapshots } from "./lib/tasks.js";
   import { isHttpUrl } from "./lib/validate.js";
 
   let tasks = $state([]);
@@ -45,6 +46,7 @@
   let addUrl = $state("");
   let settingsOpen = $state(false);
   let deleteTarget = $state(null);
+  let deleteCancel = $state();
   let menu = $state(null); // { task, x, y }
 
   let notifyOk = false;
@@ -61,6 +63,10 @@
       .reduce((sum, t) => sum + (speeds[t.id] || 0), 0),
   });
   const selected = $derived(tasks.find((t) => t.id === selectedId) ?? null);
+
+  $effect(() => {
+    if (deleteTarget) queueMicrotask(() => deleteCancel?.focus());
+  });
 
   function matchesFilter(task) {
     if (filter === "all") return true;
@@ -88,24 +94,63 @@
     }
   }
 
-  onMount(async () => {
-    [tasks, settings] = await Promise.all([listTasks(), getSettings()]);
-    notifyOk = (await isPermissionGranted()) || (await requestPermission()) === "granted";
-
-    const unlisteners = await Promise.all([
-      onTaskUpdate(({ task, speed }) => applyUpdate(task, speed)),
-      onOpenUrl((url) => openAdd(url)),
-      onNewDownload(() => openAdd("")),
-    ]);
-
+  onMount(() => {
+    let mounted = true;
+    let initialTasksLoaded = false;
+    const bufferedUpdates = new Map();
+    const unlisteners = [];
+    const closeMenu = () => (menu = null);
     const clipboardTimer = setInterval(pollClipboard, 1200);
     window.addEventListener("keydown", onKeydown);
-    window.addEventListener("click", () => (menu = null));
+    window.addEventListener("click", closeMenu);
+
+    async function register(listenerPromise) {
+      const unlisten = await listenerPromise;
+      if (mounted) unlisteners.push(unlisten);
+      else unlisten();
+    }
+
+    async function initialize() {
+      try {
+        await register(
+          onTaskUpdate(({ task, speed }) => {
+            if (initialTasksLoaded) {
+              applyUpdate(task, speed);
+              return;
+            }
+            const previous = bufferedUpdates.get(task.id);
+            if (!previous || task.updated_at >= previous.task.updated_at) {
+              bufferedUpdates.set(task.id, { task, speed });
+            }
+          }),
+        );
+        await register(onOpenUrl((url) => openAdd(url)));
+        await register(onNewDownload(() => openAdd("")));
+
+        const [initialTasks, loadedSettings] = await Promise.all([listTasks(), getSettings()]);
+        if (!mounted) return;
+
+        for (const { task, speed } of bufferedUpdates.values()) {
+          speeds[task.id] = speed;
+        }
+        tasks = mergeTaskSnapshots(initialTasks, bufferedUpdates.values());
+        settings = loadedSettings;
+        initialTasksLoaded = true;
+
+        notifyOk =
+          (await isPermissionGranted()) || (await requestPermission()) === "granted";
+      } catch (error) {
+        if (mounted) quickError = String(error);
+      }
+    }
+    initialize();
 
     return () => {
+      mounted = false;
       unlisteners.forEach((u) => u());
       clearInterval(clipboardTimer);
       window.removeEventListener("keydown", onKeydown);
+      window.removeEventListener("click", closeMenu);
     };
   });
 
@@ -123,6 +168,17 @@
   }
 
   function onKeydown(event) {
+    if (event.key === "Escape") {
+      menu = null;
+      deleteTarget = null;
+      return;
+    }
+    const target = event.target;
+    const editing =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement;
+    if (editing) return;
     if (event.ctrlKey && event.key.toLowerCase() === "n") {
       event.preventDefault();
       openAdd("");
@@ -148,25 +204,16 @@
   }
 
   async function submitAdd(values) {
-    try {
-      const task = await addDownload(values);
-      upsert(task);
-      addOpen = false;
-    } catch (e) {
-      // Surface backend validation errors inside the dialog by reopening.
-      quickError = String(e);
-      addOpen = false;
-    }
+    const task = await addDownload(values);
+    upsert(task);
+    addOpen = false;
   }
 
   async function submitSettings(next) {
-    try {
-      await saveSettings(next);
-      settings = next;
-      settingsOpen = false;
-    } catch (e) {
-      quickError = String(e);
-    }
+    const saved = await saveSettings(next);
+    settings = saved;
+    settingsOpen = false;
+    return saved;
   }
 
   function requestDelete(task) {
@@ -181,9 +228,13 @@
     const task = deleteTarget;
     deleteTarget = null;
     if (!task) return;
-    const ok = await deleteTask(task.id, withFile);
-    if (ok) tasks = tasks.filter((t) => t.id !== task.id);
-    else quickError = "请先暂停或取消任务再删除。";
+    try {
+      const ok = await deleteTask(task.id, withFile);
+      if (ok) tasks = tasks.filter((t) => t.id !== task.id);
+      else quickError = "请先暂停或取消任务再删除。";
+    } catch (error) {
+      quickError = String(error);
+    }
   }
 
   function showMenu(event, task) {
@@ -283,12 +334,16 @@
 {/if}
 
 {#if deleteTarget}
-  <div class="overlay" role="presentation" onclick={() => (deleteTarget = null)}>
-    <div class="dialog small" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
-      <h2>删除任务</h2>
+  <div
+    class="overlay"
+    role="presentation"
+    onclick={(event) => event.target === event.currentTarget && (deleteTarget = null)}
+  >
+    <div class="dialog small" role="dialog" aria-modal="true" aria-labelledby="delete-title" tabindex="-1">
+      <h2 id="delete-title">删除任务</h2>
       <p class="sub">是否同时删除已下载的文件？「仅删记录」会保留磁盘上的文件。</p>
       <div class="actions">
-        <button class="ghost" onclick={() => (deleteTarget = null)}>取消</button>
+        <button bind:this={deleteCancel} class="ghost" onclick={() => (deleteTarget = null)}>取消</button>
         <button onclick={() => confirmDelete(false)}>仅删记录</button>
         <button class="danger" onclick={() => confirmDelete(true)}>删除文件</button>
       </div>

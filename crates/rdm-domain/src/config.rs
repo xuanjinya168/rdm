@@ -2,6 +2,7 @@
 //! module, including its "reject bad value, fall back to default" semantics.
 
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -56,6 +57,41 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    /// Return the canonical settings accepted by the application.
+    pub fn validated(&self) -> Self {
+        let defaults = Self::default();
+        Self {
+            download_dir: if self.download_dir.trim().is_empty() {
+                defaults.download_dir
+            } else {
+                self.download_dir.clone()
+            },
+            max_active_downloads: if (1..=MAX_ACTIVE_DOWNLOADS).contains(&self.max_active_downloads)
+            {
+                self.max_active_downloads
+            } else {
+                defaults.max_active_downloads
+            },
+            default_connections: if (1..=MAX_CONNECTIONS).contains(&self.default_connections) {
+                self.default_connections
+            } else {
+                defaults.default_connections
+            },
+            speed_limit_bytes: if (0..=MAX_SPEED_LIMIT).contains(&self.speed_limit_bytes) {
+                self.speed_limit_bytes
+            } else {
+                defaults.speed_limit_bytes
+            },
+            retry_count: if (0..=MAX_RETRY_COUNT).contains(&self.retry_count) {
+                self.retry_count
+            } else {
+                defaults.retry_count
+            },
+            clipboard_monitoring: self.clipboard_monitoring,
+            minimize_to_tray: self.minimize_to_tray,
+        }
+    }
+
     /// Build settings from untrusted JSON, replacing any missing or
     /// out-of-range field with its default rather than failing.
     pub fn from_value(raw: &Value) -> Self {
@@ -126,16 +162,58 @@ impl SettingsStore {
     }
 
     /// Re-validate and write settings via a temp file + atomic rename.
-    pub fn save(&self, settings: &AppSettings) -> std::io::Result<()> {
-        let validated =
-            AppSettings::from_value(&serde_json::to_value(settings).expect("settings serialize"));
+    pub fn save(&self, settings: &AppSettings) -> std::io::Result<AppSettings> {
+        let validated = settings.validated();
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let temporary = self.path.with_extension("tmp");
+        let temporary = self
+            .path
+            .with_extension(format!("{}.tmp", uuid::Uuid::new_v4().simple()));
         let json = serde_json::to_string_pretty(&validated).expect("settings serialize");
-        fs::write(&temporary, json)?;
-        fs::rename(&temporary, &self.path)?;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(json.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        if let Err(error) = replace_file(&temporary, &self.path) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+        Ok(validated)
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    fs::rename(source, destination)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
         Ok(())
     }
 }
@@ -189,8 +267,42 @@ mod tests {
             max_active_downloads: 7,
             ..AppSettings::default()
         };
-        store.save(&settings).unwrap();
+        assert_eq!(store.save(&settings).unwrap(), settings);
         assert_eq!(store.load(), settings);
+    }
+
+    #[test]
+    fn save_returns_and_persists_validated_settings_repeatedly() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::new(Some(dir.path().join("settings.json")));
+        let invalid = AppSettings {
+            download_dir: " ".to_string(),
+            max_active_downloads: 999,
+            default_connections: -1,
+            speed_limit_bytes: -1,
+            retry_count: 999,
+            clipboard_monitoring: false,
+            minimize_to_tray: false,
+        };
+
+        let first = store.save(&invalid).unwrap();
+        assert_eq!(
+            first,
+            AppSettings {
+                clipboard_monitoring: false,
+                minimize_to_tray: false,
+                ..AppSettings::default()
+            }
+        );
+        assert_eq!(store.load(), first);
+
+        let replacement = AppSettings {
+            download_dir: "D:/downloads".to_string(),
+            max_active_downloads: 5,
+            ..AppSettings::default()
+        };
+        assert_eq!(store.save(&replacement).unwrap(), replacement);
+        assert_eq!(store.load(), replacement);
     }
 
     #[test]

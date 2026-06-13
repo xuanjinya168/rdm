@@ -38,5 +38,7 @@ jobs:
         with:
           workspaces: apps/rdm-desktop/src-tauri
       - run: npm ci
+      - run: npm run check
+      - run: npm test
       - run: npm run build
       - run: npm run app:build

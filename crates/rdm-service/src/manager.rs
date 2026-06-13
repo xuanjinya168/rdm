@@ -50,10 +50,9 @@ impl DownloadManager {
         database: Arc<DownloadDatabase>,
         settings: AppSettings,
         providers: Arc<ProviderRegistry>,
-    ) -> Self {
+    ) -> Result<Self, ServiceError> {
         let tasks = database
-            .load_tasks()
-            .unwrap_or_default()
+            .load_tasks()?
             .into_iter()
             .map(|task| (task.id.clone(), task))
             .collect();
@@ -73,7 +72,7 @@ impl DownloadManager {
         });
         let scheduler_inner = Arc::clone(&inner);
         tokio::spawn(async move { scheduler(scheduler_inner).await });
-        Self { inner }
+        Ok(Self { inner })
     }
 
     /// Register a progress listener.
@@ -124,8 +123,8 @@ impl DownloadManager {
             if state.stopping {
                 return Err(ServiceError::ShuttingDown);
             }
-            state.tasks.insert(task.id.clone(), task.clone());
             self.inner.database.save_task(&task)?;
+            state.tasks.insert(task.id.clone(), task.clone());
         }
         self.inner.wakeup.notify_one();
         self.inner.emit(&task, 0.0);
@@ -475,7 +474,7 @@ mod tests {
             download_dir: dir.to_string_lossy().into_owned(),
             ..AppSettings::default()
         };
-        DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default()))
+        DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default())).unwrap()
     }
 
     /// A manager that never auto-starts downloads (`max_active_downloads = 0`),
@@ -488,7 +487,7 @@ mod tests {
             max_active_downloads: 0,
             ..AppSettings::default()
         };
-        DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default()))
+        DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default())).unwrap()
     }
 
     async fn wait_for_status(
@@ -578,5 +577,45 @@ mod tests {
         let manager = manager(dir.path());
         manager.shutdown().await;
         manager.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn add_download_does_not_leak_into_memory_when_persistence_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Arc::new(DownloadDatabase::open(Some(dir.path().join("closed.db"))).unwrap());
+        let manager = DownloadManager::new(
+            Arc::clone(&database),
+            AppSettings {
+                max_active_downloads: 0,
+                ..AppSettings::default()
+            },
+            Arc::new(ProviderRegistry::default()),
+        )
+        .unwrap();
+        database.close();
+
+        let result =
+            manager.add_download("https://example.test/file.bin", dir.path(), Some(1), "", "");
+
+        assert!(matches!(result, Err(ServiceError::Store(_))));
+        assert!(manager.all_tasks().is_empty());
+        manager.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn new_surfaces_database_load_failures() {
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Arc::new(DownloadDatabase::open(Some(dir.path().join("closed.db"))).unwrap());
+        database.close();
+
+        let result = DownloadManager::new(
+            database,
+            AppSettings::default(),
+            Arc::new(ProviderRegistry::default()),
+        );
+
+        assert!(matches!(result, Err(ServiceError::Store(_))));
     }
 }

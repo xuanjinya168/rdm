@@ -21,19 +21,41 @@ pub struct ProbeResult {
     pub last_modified: Option<String>,
 }
 
+/// A parsed HTTP `Content-Range` header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentRange {
+    Bytes {
+        start: u64,
+        end: u64,
+        total: Option<u64>,
+    },
+    Unsatisfied {
+        total: Option<u64>,
+    },
+}
+
 /// Probe `url` to discover its size, range support and validators.
 ///
 /// A best-effort `HEAD` collects headers some servers only expose there, then a
 /// single-byte ranged `GET` settles the questions that matter: a `206` proves
 /// range support, a `416` with `Content-Range: */0` means an empty file, and a
 /// `200` falls back to `Content-Length`.
-pub async fn probe_url(client: &reqwest::Client, url: &str) -> Result<ProbeResult, HttpError> {
+pub async fn probe_url(
+    client: &reqwest::Client,
+    url: &str,
+    request_headers: &HeaderMap,
+) -> Result<ProbeResult, HttpError> {
     let mut head_headers: Option<HeaderMap> = None;
     let mut final_url = url.to_string();
 
     // HEAD is advisory: many servers reject it, so any failure or error status
     // is ignored and the ranged GET below remains the source of truth.
-    if let Ok(response) = client.head(url).send().await {
+    if let Ok(response) = client
+        .head(url)
+        .headers(request_headers.clone())
+        .send()
+        .await
+    {
         if response.status().as_u16() < 400 {
             final_url = response.url().to_string();
             head_headers = Some(response.headers().clone());
@@ -42,6 +64,7 @@ pub async fn probe_url(client: &reqwest::Client, url: &str) -> Result<ProbeResul
 
     let response = client
         .get(&final_url)
+        .headers(request_headers.clone())
         .header(RANGE, "bytes=0-0")
         .send()
         .await?;
@@ -94,16 +117,32 @@ fn percent_decode(value: &str) -> String {
 
 /// Extract the total length from a `Content-Range` value, or `None` when it is
 /// absent, unknown (`*`) or unparseable.
+pub fn parse_content_range(value: &str) -> Option<ContentRange> {
+    let (unit, range) = value.trim().split_once(char::is_whitespace)?;
+    if !unit.eq_ignore_ascii_case("bytes") {
+        return None;
+    }
+    let (bounds, total) = range.trim().split_once('/')?;
+    let total = match total.trim() {
+        "*" => None,
+        value => Some(value.parse::<u64>().ok()?),
+    };
+    if bounds.trim() == "*" {
+        return Some(ContentRange::Unsatisfied { total });
+    }
+    let (start, end) = bounds.trim().split_once('-')?;
+    let start = start.parse::<u64>().ok()?;
+    let end = end.parse::<u64>().ok()?;
+    if end < start || total.is_some_and(|total| end >= total) {
+        return None;
+    }
+    Some(ContentRange::Bytes { start, end, total })
+}
+
 pub(crate) fn size_from_content_range(value: Option<&str>) -> Option<u64> {
-    let value = value?;
-    if !value.contains('/') {
-        return None;
+    match parse_content_range(value?)? {
+        ContentRange::Bytes { total, .. } | ContentRange::Unsatisfied { total } => total,
     }
-    let total = value.rsplit('/').next()?;
-    if total == "*" {
-        return None;
-    }
-    total.parse::<u64>().ok()
 }
 
 /// Decide the output filename from `Content-Disposition`, falling back to the
@@ -157,7 +196,7 @@ fn decode_ext_value(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::path;
+    use wiremock::matchers::{header, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     // The host may export HTTP_PROXY (e.g. a local VPN), which would route the
@@ -179,6 +218,25 @@ mod tests {
             size_from_content_range(Some("bytes 0-0/12345")),
             Some(12345)
         );
+    }
+
+    #[test]
+    fn parses_satisfied_and_unsatisfied_content_ranges() {
+        assert_eq!(
+            parse_content_range("bytes 10-19/100"),
+            Some(ContentRange::Bytes {
+                start: 10,
+                end: 19,
+                total: Some(100),
+            })
+        );
+        assert_eq!(
+            parse_content_range("BYTES */0"),
+            Some(ContentRange::Unsatisfied { total: Some(0) })
+        );
+        assert_eq!(parse_content_range("items 0-1/2"), None);
+        assert_eq!(parse_content_range("bytes 20-10/100"), None);
+        assert_eq!(parse_content_range("bytes 0-100/100"), None);
     }
 
     #[test]
@@ -232,9 +290,13 @@ mod tests {
             .await;
 
         let client = test_client();
-        let result = probe_url(&client, &format!("{}/range.bin", server.uri()))
-            .await
-            .unwrap();
+        let result = probe_url(
+            &client,
+            &format!("{}/range.bin", server.uri()),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result.filename, "fixture.bin");
         assert_eq!(result.total_size, Some(total));
@@ -252,9 +314,13 @@ mod tests {
             .await;
 
         let client = test_client();
-        let result = probe_url(&client, &format!("{}/no-range.bin", server.uri()))
-            .await
-            .unwrap();
+        let result = probe_url(
+            &client,
+            &format!("{}/no-range.bin", server.uri()),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result.total_size, Some(body.len() as u64));
         assert!(!result.supports_ranges);
@@ -269,11 +335,42 @@ mod tests {
             .await;
 
         let client = test_client();
-        let result = probe_url(&client, &format!("{}/empty.bin", server.uri()))
-            .await
-            .unwrap();
+        let result = probe_url(
+            &client,
+            &format!("{}/empty.bin", server.uri()),
+            &HeaderMap::new(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result.total_size, Some(0));
         assert!(!result.supports_ranges);
+    }
+
+    #[tokio::test]
+    async fn probe_forwards_provider_headers() {
+        let server = MockServer::start().await;
+        Mock::given(path("/private.bin"))
+            .and(header("authorization", "Bearer test-token"))
+            .respond_with(
+                ResponseTemplate::new(206)
+                    .insert_header("Content-Range", "bytes 0-0/16")
+                    .set_body_bytes(vec![0u8]),
+            )
+            .mount(&server)
+            .await;
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer test-token".parse().unwrap());
+
+        let result = probe_url(
+            &test_client(),
+            &format!("{}/private.bin", server.uri()),
+            &headers,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.total_size, Some(16));
+        assert!(result.supports_ranges);
     }
 }

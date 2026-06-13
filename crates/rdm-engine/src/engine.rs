@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use futures_util::StreamExt;
-use reqwest::header::{IF_RANGE, RANGE};
+use reqwest::header::{HeaderMap, CONTENT_LENGTH, CONTENT_RANGE, IF_RANGE, RANGE};
 use sha2::{Digest, Sha256};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -24,7 +24,9 @@ use tokio_util::sync::CancellationToken;
 use rdm_domain::segments::{build_segments, valid_resume_segments};
 use rdm_domain::validation::sanitize_filename;
 use rdm_domain::{DownloadTask, Segment, TaskStatus};
-use rdm_http::{probe_url, PreparedDownload, ProbeResult, ProviderRegistry};
+use rdm_http::{
+    parse_content_range, probe_url, ContentRange, PreparedDownload, ProbeResult, ProviderRegistry,
+};
 use rdm_storage::DownloadDatabase;
 
 use crate::error::EngineError;
@@ -220,6 +222,7 @@ struct NotifyState {
 struct SegmentRequest {
     next_byte: u64,
     end: Option<u64>,
+    total_size: Option<u64>,
     expects_partial: bool,
     etag: Option<String>,
     last_modified: Option<String>,
@@ -276,6 +279,10 @@ impl DownloadEngine {
             Ok(prepared) => prepared,
             Err(error) => return self.fail_immediately(error.to_string()),
         };
+        let prepared_headers = match prepared.request_headers() {
+            Ok(headers) => headers,
+            Err(error) => return self.fail_immediately(error.to_string()),
+        };
         let inner = Arc::new(EngineInner {
             database: self.database,
             limiter: self.limiter,
@@ -283,7 +290,7 @@ impl DownloadEngine {
             callback: self.callback,
             retry_count: self.retry_count,
             signals: self.signals,
-            prepared_headers: prepared.headers.clone(),
+            prepared_headers,
             download_url: Mutex::new(prepared.url.clone()),
             state: Mutex::new(EngineState::new(self.task)),
             notify: Mutex::new(NotifyState {
@@ -294,12 +301,14 @@ impl DownloadEngine {
 
         match inner.execute(&prepared).await {
             Ok(()) => {}
-            Err(EngineError::Interrupted) => inner.set_status(inner.aborted_status(), None),
+            Err(EngineError::Interrupted) => {
+                inner.finalize_status(inner.aborted_status(), None);
+            }
             Err(error) => {
-                if inner.signals.should_abort() {
-                    inner.set_status(inner.aborted_status(), None);
+                if inner.signals.is_paused() || inner.signals.is_canceled() {
+                    inner.finalize_status(inner.aborted_status(), None);
                 } else {
-                    inner.set_status(TaskStatus::Failed, Some(error.to_string()));
+                    inner.finalize_status(TaskStatus::Failed, Some(error.to_string()));
                 }
             }
         }
@@ -310,9 +319,14 @@ impl DownloadEngine {
     fn fail_immediately(self, error: String) -> DownloadTask {
         let mut task = self.task;
         task.status = TaskStatus::Failed;
-        task.error = Some(error);
         task.updated_at = unix_time();
-        let _ = self.database.save_task(&task);
+        task.error = Some(error.clone());
+        if let Err(persist_error) = self.database.save_task(&task) {
+            log::error!("Could not persist immediate task failure: {persist_error}");
+            task.error = Some(format!(
+                "{error}; additionally failed to persist state: {persist_error}"
+            ));
+        }
         (self.callback)(task.clone(), 0.0);
         task
     }
@@ -325,7 +339,7 @@ struct EngineInner {
     callback: UpdateCallback,
     retry_count: u32,
     signals: Arc<Signals>,
-    prepared_headers: Vec<(String, String)>,
+    prepared_headers: HeaderMap,
     download_url: Mutex<String>,
     state: Mutex<EngineState>,
     notify: Mutex<NotifyState>,
@@ -362,8 +376,8 @@ impl EngineInner {
     }
 
     async fn execute(self: &Arc<Self>, prepared: &PreparedDownload) -> Result<(), EngineError> {
-        self.set_status(TaskStatus::Probing, None);
-        let probe = probe_url(&self.client, &prepared.url).await?;
+        self.set_status(TaskStatus::Probing, None)?;
+        let probe = probe_url(&self.client, &prepared.url, &self.prepared_headers).await?;
         *self
             .download_url
             .lock()
@@ -371,12 +385,12 @@ impl EngineInner {
         self.prepare_task(&probe)?;
         self.prepare_segments()?;
         self.check_interrupted()?;
-        self.set_status(TaskStatus::Downloading, None);
+        self.set_status(TaskStatus::Downloading, None)?;
         self.download_segments().await?;
         if self.signals.is_canceled() {
-            self.set_status(TaskStatus::Canceled, None);
+            self.set_status(TaskStatus::Canceled, None)?;
         } else if self.signals.is_paused() {
-            self.set_status(TaskStatus::Paused, None);
+            self.set_status(TaskStatus::Paused, None)?;
         } else {
             self.finish().await?;
         }
@@ -451,7 +465,7 @@ impl EngineInner {
             st.resume_segments = Vec::new();
         }
         self.state().task.error = None;
-        self.notify(true);
+        self.notify(true)?;
         Ok(())
     }
 
@@ -464,7 +478,7 @@ impl EngineInner {
             st.task.downloaded = downloaded;
             st.segments = resume;
             drop(st);
-            self.notify(true);
+            self.notify(true)?;
             return Ok(());
         }
 
@@ -496,7 +510,7 @@ impl EngineInner {
         drop(file);
 
         self.state().segments = segments;
-        self.notify(true);
+        self.notify(true)?;
         Ok(())
     }
 
@@ -564,7 +578,7 @@ impl EngineInner {
     async fn segment_worker(&self) -> Result<(), EngineError> {
         loop {
             self.check_interrupted()?;
-            let index = match self.next_segment() {
+            let index = match self.next_segment()? {
                 Some(index) => index,
                 None => return Ok(()),
             };
@@ -579,23 +593,25 @@ impl EngineInner {
         }
     }
 
-    fn next_segment(&self) -> Option<u32> {
+    fn next_segment(&self) -> Result<Option<u32>, EngineError> {
         let mut st = self.state();
         while let Some(index) = st.pending.pop_front() {
             if st.segments[index as usize].complete() {
                 continue;
             }
             st.active.insert(index);
-            return Some(index);
+            return Ok(Some(index));
         }
-        let (victim_index, created_index) = st.split_largest_active()?;
+        let Some((victim_index, created_index)) = st.split_largest_active() else {
+            return Ok(None);
+        };
         // Persisted inside the lock: two rapid splits of the same victim must
         // commit in the order they were applied, or a crash could leave
         // overlapping ranges for resume.
         let victim = st.segments[victim_index as usize].clone();
         let created = st.segments[created_index as usize].clone();
-        let _ = self.database.split_segment(&victim, &created);
-        Some(created_index)
+        self.database.split_segment(&victim, &created)?;
+        Ok(Some(created_index))
     }
 
     async fn download_segment(&self, index: u32) -> Result<(), EngineError> {
@@ -604,7 +620,7 @@ impl EngineInner {
             self.check_interrupted()?;
             let result = self.download_segment_once(index).await;
             let segment = self.state().segments[index as usize].clone();
-            let _ = self.database.update_segment(&segment);
+            self.database.update_segment(&segment)?;
             match result {
                 Ok(()) => return Ok(()),
                 Err(EngineError::Interrupted) => return Err(EngineError::Interrupted),
@@ -638,6 +654,7 @@ impl EngineInner {
             SegmentRequest {
                 next_byte: segment.next_byte(),
                 end: segment.end,
+                total_size: st.task.total_size,
                 expects_partial: st.task.supports_ranges,
                 etag: st.task.etag.clone(),
                 last_modified: st.task.last_modified.clone(),
@@ -651,9 +668,7 @@ impl EngineInner {
         }
 
         let mut builder = self.client.get(self.download_url());
-        for (name, value) in &self.prepared_headers {
-            builder = builder.header(name.as_str(), value.as_str());
-        }
+        builder = builder.headers(self.prepared_headers.clone());
         if request.expects_partial {
             let end = request.end.map(|e| e.to_string()).unwrap_or_default();
             builder = builder.header(RANGE, format!("bytes={}-{}", request.next_byte, end));
@@ -677,6 +692,11 @@ impl EngineInner {
                 "Server stopped honoring byte-range requests".into(),
             ));
         }
+        let response_range_len = if request.expects_partial {
+            Some(validate_partial_response(&response, &request)?)
+        } else {
+            None
+        };
         if !request.expects_partial && request.next_byte != 0 {
             return Err(EngineError::Download(
                 "This server does not support resuming".into(),
@@ -690,6 +710,7 @@ impl EngineInner {
 
         let mut stream = response.bytes_stream();
         let mut checkpoint = Instant::now();
+        let mut response_bytes = 0u64;
         loop {
             let item = tokio::select! {
                 biased;
@@ -704,6 +725,12 @@ impl EngineInner {
             self.check_interrupted()?;
             if chunk.is_empty() {
                 continue;
+            }
+            response_bytes = response_bytes.saturating_add(chunk.len() as u64);
+            if response_range_len.is_some_and(|expected| response_bytes > expected) {
+                return Err(EngineError::Download(format!(
+                    "Ranged response body exceeded Content-Range length ({response_bytes} bytes)"
+                )));
             }
 
             let chunk = self.trim_chunk(index, chunk);
@@ -728,10 +755,16 @@ impl EngineInner {
             }
             if checkpoint.elapsed() >= DB_SAVE_INTERVAL {
                 let segment = self.state().segments[index as usize].clone();
-                let _ = self.database.update_segment(&segment);
+                if let Err(error) = self.database.update_segment(&segment) {
+                    log::warn!(
+                        "Could not persist progress for task {} segment {}: {error}",
+                        segment.task_id,
+                        segment.index
+                    );
+                }
                 checkpoint = Instant::now();
             }
-            self.notify(false);
+            let _ = self.notify(false);
         }
 
         let (downloaded, size) = {
@@ -739,6 +772,15 @@ impl EngineInner {
             let segment = &st.segments[index as usize];
             (segment.downloaded, segment.size())
         };
+        let current_end = self.state().segments[index as usize].end;
+        if current_end == request.end
+            && response_range_len.is_some_and(|expected| response_bytes != expected)
+        {
+            return Err(EngineError::Download(format!(
+                "Ranged response body length mismatch ({response_bytes}/{} bytes)",
+                response_range_len.unwrap_or_default()
+            )));
+        }
         if let Some(size) = size {
             if downloaded != size {
                 return Err(EngineError::Download(format!(
@@ -815,7 +857,7 @@ impl EngineInner {
             ));
         }
         if let Some(expected_sha) = expected_sha {
-            self.set_status(TaskStatus::Verifying, None);
+            self.set_status(TaskStatus::Verifying, None)?;
             let actual_sha = self.calculate_sha256(&part_path).await?;
             self.state().task.actual_sha256 = Some(actual_sha.clone());
             if actual_sha != expected_sha {
@@ -835,7 +877,7 @@ impl EngineInner {
             st.task.filename = task.filename;
             st.task.downloaded = actual;
         }
-        self.set_status(TaskStatus::Completed, None);
+        self.set_status(TaskStatus::Completed, None)?;
         Ok(())
     }
 
@@ -873,18 +915,38 @@ impl EngineInner {
         .map_err(|error| EngineError::Download(format!("hashing task failed: {error}")))?
     }
 
-    fn set_status(&self, status: TaskStatus, error: Option<String>) {
+    fn set_status(&self, status: TaskStatus, error: Option<String>) -> Result<(), EngineError> {
         {
             let mut st = self.state();
             st.task.status = status;
             st.task.error = error;
         }
-        self.notify(true);
+        self.notify(true)
+    }
+
+    fn finalize_status(&self, status: TaskStatus, error: Option<String>) {
+        if let Err(persist_error) = self.set_status(status, error.clone()) {
+            log::error!("Could not persist terminal task status: {persist_error}");
+            let message = match error {
+                Some(error) => {
+                    format!("{error}; additionally failed to persist state: {persist_error}")
+                }
+                None => format!("Failed to persist task state: {persist_error}"),
+            };
+            let snapshot = {
+                let mut st = self.state();
+                st.task.status = TaskStatus::Failed;
+                st.task.error = Some(message);
+                st.task.updated_at = unix_time();
+                st.task.clone()
+            };
+            (self.callback)(snapshot, 0.0);
+        }
     }
 
     /// Throttled progress fan-out: persists the task at most once a second and
     /// invokes the callback at most every 200 ms (or immediately when forced).
-    fn notify(&self, force: bool) {
+    fn notify(&self, force: bool) -> Result<(), EngineError> {
         let now = Instant::now();
         let save_to_db;
         {
@@ -893,7 +955,7 @@ impl EngineInner {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             if !force && now.duration_since(notify.last_ui) < UI_NOTIFY_INTERVAL {
-                return;
+                return Ok(());
             }
             notify.last_ui = now;
             save_to_db = force || now.duration_since(notify.last_db) >= DB_SAVE_INTERVAL;
@@ -907,10 +969,71 @@ impl EngineInner {
             (st.task.clone(), st.current_speed())
         };
         if save_to_db {
-            let _ = self.database.save_task(&snapshot);
+            if let Err(error) = self.database.save_task(&snapshot) {
+                if force {
+                    return Err(error.into());
+                }
+                log::warn!(
+                    "Could not persist progress for task {}: {error}",
+                    snapshot.id
+                );
+            }
         }
         (self.callback)(snapshot, speed);
+        Ok(())
     }
+}
+
+fn validate_partial_response(
+    response: &reqwest::Response,
+    request: &SegmentRequest,
+) -> Result<u64, EngineError> {
+    let value = response
+        .headers()
+        .get(CONTENT_RANGE)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| EngineError::Download("206 response omitted Content-Range".into()))?;
+    let ContentRange::Bytes { start, end, total } = parse_content_range(value)
+        .ok_or_else(|| EngineError::Download(format!("Invalid Content-Range: {value}")))?
+    else {
+        return Err(EngineError::Download(format!(
+            "Unexpected unsatisfied Content-Range in 206 response: {value}"
+        )));
+    };
+    if start != request.next_byte {
+        return Err(EngineError::Download(format!(
+            "Content-Range starts at {start}, expected {}",
+            request.next_byte
+        )));
+    }
+    if request.end.is_some_and(|requested_end| end > requested_end) {
+        return Err(EngineError::Download(format!(
+            "Content-Range ends at {end}, beyond requested end {}",
+            request.end.unwrap_or_default()
+        )));
+    }
+    if let Some(expected_total) = request.total_size {
+        if total != Some(expected_total) {
+            return Err(EngineError::Download(format!(
+                "Content-Range total {:?} does not match expected size {expected_total}",
+                total
+            )));
+        }
+    }
+    let range_len = end - start + 1;
+    if let Some(content_length) = response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        if content_length != range_len {
+            return Err(EngineError::Download(format!(
+                "Content-Length {content_length} does not match Content-Range length {range_len}"
+            )));
+        }
+    }
+    Ok(range_len)
 }
 
 fn to_hex(bytes: &[u8]) -> String {
@@ -933,6 +1056,7 @@ fn unix_time() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rdm_http::{DownloadProvider, HttpError};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
 
@@ -983,6 +1107,7 @@ mod tests {
         let method = request_parts.next().unwrap_or("GET");
         let path = request_parts.next().unwrap_or("/");
         let mut range = None;
+        let mut authorization = None;
         for line in lines {
             if let Some(value) = line
                 .strip_prefix("Range:")
@@ -990,6 +1115,20 @@ mod tests {
             {
                 range = Some(value.trim().to_string());
             }
+            if let Some(value) = line
+                .strip_prefix("Authorization:")
+                .or_else(|| line.strip_prefix("authorization:"))
+            {
+                authorization = Some(value.trim().to_string());
+            }
+        }
+        if path.contains("private") && authorization.as_deref() != Some("Bearer test-token") {
+            socket
+                .write_all(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await?;
+            return Ok(());
         }
 
         let total = data.len();
@@ -1028,17 +1167,41 @@ mod tests {
         });
         headers.push_str("Content-Type: application/octet-stream\r\n");
         headers.push_str("Content-Disposition: attachment; filename=\"fixture.bin\"\r\n");
-        headers.push_str(&format!("Content-Length: {}\r\n", body.len()));
+        if !path.contains("short-body") {
+            let content_length = if path.contains("wrong-length") {
+                body.len().saturating_add(1)
+            } else {
+                body.len()
+            };
+            headers.push_str(&format!("Content-Length: {content_length}\r\n"));
+        }
         headers.push_str("ETag: \"v1\"\r\n");
         if honor_range {
             headers.push_str("Accept-Ranges: bytes\r\n");
         }
-        if partial {
-            headers.push_str(&format!("Content-Range: bytes {start}-{end}/{total}\r\n"));
+        if partial && !path.contains("missing-range") {
+            let (header_start, header_end) = if path.contains("wrong-range") {
+                (start.saturating_add(1), end.saturating_add(1))
+            } else {
+                (start, end)
+            };
+            let header_total = if path.contains("wrong-total") && !(start == 0 && end == 0) {
+                total.saturating_add(1)
+            } else {
+                total
+            };
+            headers.push_str(&format!(
+                "Content-Range: bytes {header_start}-{header_end}/{header_total}\r\n"
+            ));
         }
         headers.push_str("Connection: close\r\n\r\n");
         socket.write_all(headers.as_bytes()).await?;
         if method != "HEAD" {
+            let body = if path.contains("short-body") && !body.is_empty() {
+                &body[..body.len() - 1]
+            } else {
+                body
+            };
             socket.write_all(body).await?;
         }
         Ok(())
@@ -1163,5 +1326,124 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("SHA-256"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rejects_misaligned_content_range() {
+        let data = Arc::new(make_data(1024 * 1024));
+        let base = start_server(Arc::clone(&data)).await;
+        let dir = tempfile::tempdir().unwrap();
+        let (database, limiter, providers) = setup(dir.path());
+
+        let task = DownloadTask::create(&format!("{base}/wrong-range.bin"), dir.path(), 2, "", "")
+            .unwrap();
+        database.save_task(&task).unwrap();
+        let engine = DownloadEngine::new(
+            task,
+            Arc::clone(&database),
+            limiter,
+            providers,
+            no_proxy_client(),
+            Arc::new(|_, _| {}),
+            0,
+        );
+
+        let final_task = engine.run().await;
+
+        assert_eq!(final_task.status, TaskStatus::Failed);
+        assert!(final_task
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Content-Range"));
+        assert!(!final_task.output_path().exists());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rejects_other_inconsistent_ranged_responses() {
+        let data = Arc::new(make_data(1024 * 1024));
+        let base = start_server(Arc::clone(&data)).await;
+
+        for path in [
+            "wrong-total.bin",
+            "wrong-length.bin",
+            "short-body.bin",
+            "missing-range.bin",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (database, limiter, providers) = setup(dir.path());
+            let task =
+                DownloadTask::create(&format!("{base}/{path}"), dir.path(), 2, "", "").unwrap();
+            database.save_task(&task).unwrap();
+            let engine = DownloadEngine::new(
+                task,
+                Arc::clone(&database),
+                limiter,
+                providers,
+                no_proxy_client(),
+                Arc::new(|_, _| {}),
+                0,
+            );
+
+            let final_task = engine.run().await;
+
+            assert_eq!(
+                final_task.status,
+                TaskStatus::Failed,
+                "{path} unexpectedly succeeded"
+            );
+            assert!(!final_task.output_path().exists());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn provider_headers_are_used_for_probe_and_segments() {
+        struct AuthProvider;
+
+        impl DownloadProvider for AuthProvider {
+            fn name(&self) -> &str {
+                "auth-test"
+            }
+
+            fn can_handle(&self, _url: &str) -> bool {
+                true
+            }
+
+            fn prepare(&self, task: &DownloadTask) -> Result<PreparedDownload, HttpError> {
+                Ok(PreparedDownload {
+                    url: task.url.clone(),
+                    headers: vec![("Authorization".to_string(), "Bearer test-token".to_string())],
+                })
+            }
+        }
+
+        let data = Arc::new(make_data(1024 * 1024));
+        let base = start_server(Arc::clone(&data)).await;
+        let dir = tempfile::tempdir().unwrap();
+        let database =
+            Arc::new(DownloadDatabase::open(Some(dir.path().join("downloads.db"))).unwrap());
+        let providers = Arc::new(ProviderRegistry::new(vec![Box::new(AuthProvider)]));
+        let task =
+            DownloadTask::create(&format!("{base}/private.bin"), dir.path(), 2, "", "").unwrap();
+        database.save_task(&task).unwrap();
+        let engine = DownloadEngine::new(
+            task,
+            Arc::clone(&database),
+            Arc::new(RateLimiter::new(0)),
+            providers,
+            no_proxy_client(),
+            Arc::new(|_, _| {}),
+            0,
+        );
+
+        let final_task = engine.run().await;
+
+        assert_eq!(
+            final_task.status,
+            TaskStatus::Completed,
+            "error: {:?}",
+            final_task.error
+        );
+        assert_eq!(std::fs::read(final_task.output_path()).unwrap(), *data);
     }
 }

@@ -96,13 +96,16 @@ fn delete_task(state: State<'_, AppState>, id: String, delete_file: bool) -> Res
 }
 
 #[tauri::command]
-fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<(), String> {
-    state
+fn save_settings(
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> Result<AppSettings, String> {
+    let validated = state
         .settings_store
         .save(&settings)
         .map_err(|error| error.to_string())?;
-    state.manager.update_settings(settings);
-    Ok(())
+    state.manager.update_settings(validated.clone());
+    Ok(validated)
 }
 
 /// Open a task's destination folder in the system file manager.
@@ -230,7 +233,7 @@ pub fn run() {
             // tokio, and the spawned scheduler outlives this block.
             let manager = tauri::async_runtime::block_on(async {
                 DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default()))
-            });
+            })?;
 
             let emitter = app.handle().clone();
             manager.add_listener(Arc::new(move |task, speed| {

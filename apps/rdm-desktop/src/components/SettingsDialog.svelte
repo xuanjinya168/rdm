@@ -1,4 +1,5 @@
 <script>
+  import { onMount, untrack } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
 
   let { settings, onsave, onclose } = $props();
@@ -9,13 +10,18 @@
   // Values are KB/s; 0 = unlimited.
   const SPEED_CHOICES = [0, 512, 1024, 2048, 5120, 10240, 20480, 51200, 102400];
 
-  let downloadDir = $state(settings.download_dir);
-  let maxActive = $state(settings.max_active_downloads);
-  let connections = $state(settings.default_connections);
-  let retry = $state(settings.retry_count);
-  let speedKb = $state(Math.floor(settings.speed_limit_bytes / 1024));
-  let clipboard = $state(settings.clipboard_monitoring);
-  let tray = $state(settings.minimize_to_tray);
+  let downloadDir = $state(untrack(() => settings.download_dir));
+  let maxActive = $state(untrack(() => settings.max_active_downloads));
+  let connections = $state(untrack(() => settings.default_connections));
+  let retry = $state(untrack(() => settings.retry_count));
+  let speedKb = $state(untrack(() => Math.floor(settings.speed_limit_bytes / 1024)));
+  let clipboard = $state(untrack(() => settings.clipboard_monitoring));
+  let tray = $state(untrack(() => settings.minimize_to_tray));
+  let error = $state("");
+  let saving = $state(false);
+  let dialog;
+
+  onMount(() => dialog?.focus());
 
   function speedLabel(kb) {
     if (kb === 0) return "不限速";
@@ -28,23 +34,51 @@
     if (picked) downloadDir = picked;
   }
 
-  function save(event) {
+  async function save(event) {
     event.preventDefault();
-    onsave({
-      download_dir: downloadDir.trim(),
-      max_active_downloads: Number(maxActive),
-      default_connections: Number(connections),
-      retry_count: Number(retry),
-      speed_limit_bytes: Number(speedKb) * 1024,
-      clipboard_monitoring: clipboard,
-      minimize_to_tray: tray,
-    });
+    error = "";
+    if (!downloadDir.trim()) {
+      error = "请选择默认下载目录。";
+      return;
+    }
+    saving = true;
+    try {
+      await onsave({
+        download_dir: downloadDir.trim(),
+        max_active_downloads: Number(maxActive),
+        default_connections: Number(connections),
+        retry_count: Number(retry),
+        speed_limit_bytes: Number(speedKb) * 1024,
+        clipboard_monitoring: clipboard,
+        minimize_to_tray: tray,
+      });
+    } catch (saveError) {
+      error = String(saveError);
+    } finally {
+      saving = false;
+    }
+  }
+
+  function handleKeydown(event) {
+    if (event.key === "Escape" && !saving) onclose();
   }
 </script>
 
-<div class="overlay" onclick={onclose} role="presentation">
-  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-    <h2>下载设置</h2>
+<div
+  class="overlay"
+  onclick={(event) => event.target === event.currentTarget && !saving && onclose()}
+  role="presentation"
+>
+  <div
+    bind:this={dialog}
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="settings-title"
+    tabindex="-1"
+    onkeydown={handleKeydown}
+  >
+    <h2 id="settings-title">下载设置</h2>
     <p class="sub">调整并发数量、速度限制和桌面行为。</p>
     <form onsubmit={save}>
       <label>默认目录
@@ -89,9 +123,12 @@
         <input type="checkbox" bind:checked={tray} />
         关闭主窗口时继续在系统托盘运行
       </label>
+      {#if error}<p class="error">{error}</p>{/if}
       <div class="actions">
-        <button type="button" class="ghost" onclick={onclose}>取消</button>
-        <button type="submit" class="primary">保存设置</button>
+        <button type="button" class="ghost" disabled={saving} onclick={onclose}>取消</button>
+        <button type="submit" class="primary" disabled={saving}>
+          {saving ? "正在保存…" : "保存设置"}
+        </button>
       </div>
     </form>
   </div>
