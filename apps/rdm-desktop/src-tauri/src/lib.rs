@@ -19,6 +19,7 @@ use rdm_domain::config::{AppSettings, SettingsStore};
 use rdm_domain::validation::is_http_url;
 use rdm_domain::DownloadTask;
 use rdm_http::ProviderRegistry;
+use rdm_resolver::{ResolvedPost, ResolverRegistry};
 use rdm_service::DownloadManager;
 use rdm_storage::DownloadDatabase;
 
@@ -26,6 +27,8 @@ use rdm_storage::DownloadDatabase;
 struct AppState {
     manager: DownloadManager,
     settings_store: SettingsStore,
+    /// Resolves social-media / web post URLs into downloadable media items.
+    resolvers: Arc<ResolverRegistry>,
     /// Set when the user really wants to quit, so the close handler exits
     /// instead of hiding to the tray.
     force_quit: AtomicBool,
@@ -106,6 +109,19 @@ fn save_settings(
         .map_err(|error| error.to_string())?;
     state.manager.update_settings(validated.clone());
     Ok(validated)
+}
+
+/// Resolve a social-media / web post URL into its downloadable media items.
+///
+/// The registry is cloned out of state before the first `.await` so the command
+/// future does not borrow `State` across suspension points.
+#[tauri::command]
+async fn resolve_media(state: State<'_, AppState>, url: String) -> Result<ResolvedPost, String> {
+    let resolvers = state.resolvers.clone();
+    resolvers
+        .resolve(url.trim())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// Open a task's destination folder in the system file manager.
@@ -240,9 +256,12 @@ pub fn run() {
                 let _ = emitter.emit("task://update", ProgressPayload { task, speed });
             }));
 
+            let resolvers = Arc::new(ResolverRegistry::new()?);
+
             app.manage(AppState {
                 manager,
                 settings_store,
+                resolvers,
                 force_quit: AtomicBool::new(false),
             });
 
@@ -283,6 +302,7 @@ pub fn run() {
             cancel_task,
             delete_task,
             save_settings,
+            resolve_media,
             open_folder,
         ])
         .run(tauri::generate_context!())

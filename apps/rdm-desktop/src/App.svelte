@@ -8,6 +8,9 @@
   } from "@tauri-apps/plugin-notification";
   import AddDialog from "./components/AddDialog.svelte";
   import SettingsDialog from "./components/SettingsDialog.svelte";
+  import AppIcon from "./components/AppIcon.svelte";
+  import MediaResolverPage from "./components/MediaResolverPage.svelte";
+  import SnifferPage from "./components/SnifferPage.svelte";
   import {
     listTasks,
     getSettings,
@@ -41,6 +44,7 @@
   let selectedId = $state(null);
   let quickUrl = $state("");
   let quickError = $state("");
+  let page = $state("downloads");
 
   let addOpen = $state(false);
   let addUrl = $state("");
@@ -51,6 +55,27 @@
 
   let notifyOk = false;
   let lastClipboard = "";
+
+  const navigation = [
+    { id: "downloads", label: "下载中心", icon: "downloads" },
+    { id: "media", label: "媒体解析", icon: "media", badge: "新" },
+    { id: "sniffer", label: "网页嗅探", icon: "sniff" },
+  ];
+  const pageMeta = {
+    downloads: {
+      title: "下载中心",
+      description: "管理所有来源的下载任务",
+    },
+    media: {
+      title: "媒体解析",
+      description: "从社交媒体和网页中提取视频、音频与字幕",
+    },
+    sniffer: {
+      title: "网页嗅探",
+      description: "查看浏览器页面中实时发现的媒体资源",
+    },
+  };
+  const currentPage = $derived(pageMeta[page]);
 
   const sorted = $derived([...tasks].sort((a, b) => b.created_at - a.created_at));
   const visible = $derived(sorted.filter(matchesFilter));
@@ -63,6 +88,10 @@
       .reduce((sum, t) => sum + (speeds[t.id] || 0), 0),
   });
   const selected = $derived(tasks.find((t) => t.id === selectedId) ?? null);
+
+  $effect(() => {
+    document.documentElement.dataset.theme = settings?.theme === "light" ? "light" : "dark";
+  });
 
   $effect(() => {
     if (deleteTarget) queueMicrotask(() => deleteCancel?.focus());
@@ -182,12 +211,16 @@
     if (event.ctrlKey && event.key.toLowerCase() === "n") {
       event.preventDefault();
       openAdd("");
+    } else if (event.ctrlKey && ["1", "2", "3"].includes(event.key)) {
+      event.preventDefault();
+      page = navigation[Number(event.key) - 1].id;
     } else if (event.key === "Delete" && selected) {
       requestDelete(selected);
     }
   }
 
   function openAdd(url) {
+    page = "downloads";
     addUrl = url;
     addOpen = true;
   }
@@ -207,6 +240,13 @@
     const task = await addDownload(values);
     upsert(task);
     addOpen = false;
+  }
+
+  // Queue one resolved media item; reused by the media resolver page.
+  async function downloadMedia(values) {
+    const task = await addDownload(values);
+    upsert(task);
+    return task;
   }
 
   async function submitSettings(next) {
@@ -244,70 +284,160 @@
   }
 </script>
 
-<main>
-  <header>
-    <div class="brand"><span class="mark">R</span><div><div class="name">RDM</div><div class="tag">多连接下载管理器</div></div></div>
-    <div class="spacer"></div>
-    <button onclick={() => (settingsOpen = true)}>设置</button>
-    <button class="primary" onclick={() => openAdd("")}>新建下载</button>
-  </header>
-
-  <section class="stats">
-    <div class="card"><div class="k">全部任务</div><div class="v">{stats.total}</div></div>
-    <div class="card"><div class="k">正在下载</div><div class="v">{stats.active}</div></div>
-    <div class="card"><div class="k">已完成</div><div class="v">{stats.completed}</div></div>
-    <div class="card"><div class="k">当前速度</div><div class="v">{formatSpeed(stats.speed)}</div></div>
-  </section>
-
-  <section class="quick">
-    <input
-      type="url"
-      bind:value={quickUrl}
-      placeholder="粘贴 HTTP/HTTPS 地址，按 Enter 添加"
-      onkeydown={(e) => e.key === "Enter" && quickAdd()}
-    />
-    <button class="primary" onclick={quickAdd}>添加</button>
-  </section>
-  {#if quickError}<p class="banner">{quickError}</p>{/if}
-
-  <section class="panel">
-    <div class="toolbar">
-      {#each [["all", "全部"], ["active", "进行中"], ["completed", "已完成"], ["other", "其他"]] as [key, label]}
-        <button class="chip" class:active={filter === key} onclick={() => (filter = key)}>{label}</button>
-      {/each}
-      <div class="spacer"></div>
-      <button disabled={!selected || ACTIVE_STATUSES.has(selected?.status) || selected?.status === "completed"} onclick={() => selected && startTask(selected.id)}>开始</button>
-      <button disabled={!selected || !ACTIVE_FILTER_STATUSES.has(selected?.status)} onclick={() => selected && pauseTask(selected.id)}>暂停</button>
-      <button disabled={!selected} onclick={() => selected && openFolder(selected.destination)}>目录</button>
-      <button class="danger" disabled={!selected || ACTIVE_STATUSES.has(selected?.status)} onclick={() => selected && requestDelete(selected)}>删除</button>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="mark">R</span>
+      <div><div class="brand-name">RDM</div><div class="tag">资源下载管理器</div></div>
     </div>
 
-    <table>
-      <thead>
-        <tr><th>文件</th><th>大小</th><th>状态</th><th class="pcol">进度</th><th>速度</th><th>剩余</th></tr>
-      </thead>
-      <tbody>
-        {#each visible as task (task.id)}
-          <tr
-            class:selected={task.id === selectedId}
-            onclick={() => (selectedId = task.id)}
-            ondblclick={() => openFolder(task.destination)}
-            oncontextmenu={(e) => showMenu(e, task)}
-          >
-            <td class="name" title={task.url}>{task.filename || task.url}</td>
-            <td>{task.total_size ? formatBytes(task.total_size) : "—"}</td>
-            <td><span class="badge {task.status}">{statusLabel(task.status)}</span></td>
-            <td class="pcol"><div class="bar"><div class="fill" style:width={`${percent(task)}%`}></div></div></td>
-            <td>{ACTIVE_FILTER_STATUSES.has(task.status) ? formatSpeed(speeds[task.id]) : "—"}</td>
-            <td>{formatEta(task, speeds[task.id])}</td>
-          </tr>
+    <div class="nav-label">工作台</div>
+    <nav aria-label="主要导航">
+      {#each navigation as item}
+        <button
+          class="nav-item"
+          class:active={page === item.id}
+          onclick={() => (page = item.id)}
+          title={`Ctrl+${navigation.indexOf(item) + 1}`}
+        >
+          <AppIcon name={item.icon} size={17} />
+          <span>{item.label}</span>
+          {#if item.badge}<small>{item.badge}</small>{/if}
+        </button>
+      {/each}
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+    <div class="engine-state">
+      <span class="state-dot"></span>
+      <div><strong>下载引擎</strong><small>本地服务运行中</small></div>
+    </div>
+    <button class="settings-link" onclick={() => (settingsOpen = true)}>
+      <AppIcon name="settings" size={17} />
+      <span>设置</span>
+    </button>
+    <div class="version">RDM 0.1.0</div>
+  </aside>
+
+  <section class="workspace">
+    <header class="topbar">
+      <div>
+        <h1>{currentPage.title}</h1>
+        <p>{currentPage.description}</p>
+      </div>
+      <div class="topbar-actions">
+        {#if page === "downloads"}
+          <button class="primary new-download" onclick={() => openAdd("")}>
+            <AppIcon name="plus" size={16} />新建下载
+          </button>
         {:else}
-          <tr><td colspan="6" class="empty">还没有下载任务。点击右上角「新建下载」开始。</td></tr>
-        {/each}
-      </tbody>
-    </table>
+          <span class="phase-label">功能设计阶段</span>
+        {/if}
+      </div>
+    </header>
+
+    <div class="page-content">
+      {#if page === "downloads"}
+        <section class="stats">
+          <div class="stat-card">
+            <span class="stat-icon blue"><AppIcon name="downloads" size={18} /></span>
+            <div><div class="k">全部任务</div><div class="v">{stats.total}</div></div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon violet"><AppIcon name="activity" size={18} /></span>
+            <div><div class="k">正在下载</div><div class="v">{stats.active}</div></div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon green"><AppIcon name="check" size={18} /></span>
+            <div><div class="k">已完成</div><div class="v">{stats.completed}</div></div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon amber"><AppIcon name="bolt" size={18} /></span>
+            <div><div class="k">当前速度</div><div class="v speed">{formatSpeed(stats.speed)}</div></div>
+          </div>
+        </section>
+
+        <section class="quick-card">
+          <div class="quick-heading">
+            <span class="quick-icon"><AppIcon name="link" size={18} /></span>
+            <div><strong>快速添加</strong><small>直接创建 HTTP / HTTPS 下载任务</small></div>
+          </div>
+          <div class="quick">
+            <input
+              type="url"
+              bind:value={quickUrl}
+              placeholder="粘贴文件地址，按 Enter 添加"
+              onkeydown={(e) => e.key === "Enter" && quickAdd()}
+            />
+            <button class="primary" onclick={quickAdd}>添加任务</button>
+          </div>
+        </section>
+        {#if quickError}<p class="banner">{quickError}</p>{/if}
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <strong>下载任务</strong>
+              <span>{visible.length} 个项目</span>
+            </div>
+            <div class="panel-heading-actions">
+              <button disabled={!selected || ACTIVE_STATUSES.has(selected?.status) || selected?.status === "completed"} onclick={() => selected && startTask(selected.id)}>开始</button>
+              <button disabled={!selected || !ACTIVE_FILTER_STATUSES.has(selected?.status)} onclick={() => selected && pauseTask(selected.id)}>暂停</button>
+              <button disabled={!selected} onclick={() => selected && openFolder(selected.destination)}><AppIcon name="folder" size={14} />目录</button>
+              <button class="danger" disabled={!selected || ACTIVE_STATUSES.has(selected?.status)} onclick={() => selected && requestDelete(selected)}>删除</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            {#each [["all", "全部"], ["active", "进行中"], ["completed", "已完成"], ["other", "其他"]] as [key, label]}
+              <button class="chip" class:active={filter === key} onclick={() => (filter = key)}>{label}</button>
+            {/each}
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>文件</th><th>大小</th><th>状态</th><th class="pcol">进度</th><th>速度</th><th>剩余</th></tr>
+              </thead>
+              <tbody>
+                {#each visible as task (task.id)}
+                  <tr
+                    class:selected={task.id === selectedId}
+                    onclick={() => (selectedId = task.id)}
+                    ondblclick={() => openFolder(task.destination)}
+                    oncontextmenu={(e) => showMenu(e, task)}
+                  >
+                    <td class="task-name" title={task.url}>
+                      <span class="file-icon"><AppIcon name="downloads" size={14} /></span>
+                      <span>{task.filename || task.url}</span>
+                    </td>
+                    <td>{task.total_size ? formatBytes(task.total_size) : "—"}</td>
+                    <td><span class="badge {task.status}">{statusLabel(task.status)}</span></td>
+                    <td class="pcol"><div class="bar"><div class="fill" style:width={`${percent(task)}%`}></div></div></td>
+                    <td>{ACTIVE_FILTER_STATUSES.has(task.status) ? formatSpeed(speeds[task.id]) : "—"}</td>
+                    <td>{formatEta(task, speeds[task.id])}</td>
+                  </tr>
+                {:else}
+                  <tr>
+                    <td colspan="6" class="empty">
+                      <span class="empty-icon"><AppIcon name="downloads" size={24} /></span>
+                      <strong>还没有下载任务</strong>
+                      <small>添加直接链接，或从媒体解析和网页嗅探中创建任务</small>
+                      <button class="primary" onclick={() => openAdd("")}>新建下载</button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {:else if page === "media"}
+        <MediaResolverPage onDownload={downloadMedia} downloadDir={settings?.download_dir} />
+      {:else if page === "sniffer"}
+        <SnifferPage />
+      {/if}
+    </div>
   </section>
-</main>
+</div>
 
 {#if menu}
   <div class="ctx" style:left={`${menu.x}px`} style:top={`${menu.y}px`}>

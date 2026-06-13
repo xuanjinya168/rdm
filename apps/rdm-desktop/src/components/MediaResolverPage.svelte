@@ -1,0 +1,399 @@
+<script>
+  import AppIcon from "./AppIcon.svelte";
+  import { isHttpUrl } from "../lib/validate.js";
+  import { resolveMedia } from "../lib/api.js";
+
+  // onDownload(values) -> queues one media item and returns the created task.
+  let { onDownload, downloadDir = "" } = $props();
+
+  let url = $state("");
+  let loading = $state(false);
+  let message = $state("");
+  let messageType = $state("info");
+  let post = $state(null);
+  let queued = $state(new Set()); // indices already sent to the download engine
+  let busy = $state(new Set()); // indices currently being queued
+
+  const kindLabel = { image: "图片", video: "视频", gif: "动图" };
+
+  function setMessage(text, type = "info") {
+    message = text;
+    messageType = type;
+  }
+
+  function formatDuration(secs) {
+    if (!secs) return "";
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  async function resolve(event) {
+    event.preventDefault();
+    const value = url.trim();
+    if (!isHttpUrl(value)) {
+      setMessage("请输入有效的网页或媒体地址。", "error");
+      return;
+    }
+    loading = true;
+    post = null;
+    queued = new Set();
+    setMessage("正在解析链接…", "info");
+    try {
+      const result = await resolveMedia(value);
+      post = result;
+      setMessage(`解析成功，找到 ${result.media.length} 个媒体文件。`, "success");
+    } catch (error) {
+      setMessage(String(error), "error");
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function download(item, index) {
+    if (queued.has(index) || busy.has(index)) return;
+    busy = new Set(busy).add(index);
+    try {
+      await onDownload?.({ url: item.url, filename: item.filename });
+      queued = new Set(queued).add(index);
+    } catch (error) {
+      setMessage(`「${item.filename}」加入下载失败：${error}`, "error");
+    } finally {
+      const next = new Set(busy);
+      next.delete(index);
+      busy = next;
+    }
+  }
+
+  async function downloadAll() {
+    if (!post) return;
+    for (let i = 0; i < post.media.length; i += 1) {
+      await download(post.media[i], i);
+    }
+    setMessage("已将全部媒体加入下载中心。", "success");
+  }
+
+  const steps = [
+    ["1", "识别来源", "匹配站点解析器或通用网页解析器"],
+    ["2", "提取媒体", "读取视频、音频、字幕和封面信息"],
+    ["3", "选择版本", "按清晰度、编码和文件大小进行选择"],
+    ["4", "创建任务", "生成下载计划并交给下载引擎执行"],
+  ];
+</script>
+
+<div class="media-page">
+  <section class="resolver-hero">
+    <div class="hero-copy">
+      <div class="eyebrow"><AppIcon name="bolt" size={14} /> 聚合媒体解析</div>
+      <h2>一个链接，整理出所有可下载内容</h2>
+      <p>粘贴 Twitter / X、Instagram 或 Threads 帖子地址，RDM 将提取其中的图片、视频与动图。</p>
+    </div>
+
+    <form class="resolver-box" onsubmit={resolve}>
+      <div class="input-wrap">
+        <AppIcon name="link" size={18} />
+        <input bind:value={url} aria-label="待解析地址" placeholder="粘贴 Twitter / X、Instagram 或 Threads 帖子地址" />
+        {#if url}
+          <button type="button" class="clear" aria-label="清空地址" onclick={() => (url = "")}>×</button>
+        {/if}
+      </div>
+      <button class="primary resolve-button" type="submit" disabled={loading}>
+        {loading ? "解析中…" : "解析"}
+      </button>
+    </form>
+
+    <div class="source-list" aria-label="当前支持的资源类型">
+      <span class="supported">Twitter / X</span>
+      <span class="supported">Instagram</span>
+      <span class="supported">Threads</span>
+      <span class="planned">更多平台开发中</span>
+    </div>
+
+    {#if message}
+      <div
+        class="prototype-note"
+        class:message-error={messageType === "error"}
+        class:message-success={messageType === "success"}
+      >
+        <span class="note-dot"></span>{message}
+      </div>
+    {/if}
+  </section>
+
+  <section class="section-block">
+    <div class="section-heading">
+      <div>
+        <span class="section-kicker">解析结果</span>
+        <h3>媒体选择器</h3>
+      </div>
+      {#if post && post.media.length}
+        <button class="primary small" onclick={downloadAll}>
+          <AppIcon name="downloads" size={14} /> 全部下载
+        </button>
+      {/if}
+    </div>
+
+    {#if post}
+      {#if post.title}
+        <h4 class="post-title">{post.title}</h4>
+      {/if}
+      {#if post.text}
+        <p class="post-text">{post.text}</p>
+      {/if}
+      <div class="media-grid">
+        {#each post.media as item, index}
+          <article class="media-card">
+            <div class="thumb">
+              {#if item.thumb_url}
+                <img src={item.thumb_url} alt={kindLabel[item.kind] ?? item.kind} loading="lazy" />
+              {:else}
+                <div class="thumb-fallback"><AppIcon name="media" size={22} /></div>
+              {/if}
+              <span class="kind-badge">{kindLabel[item.kind] ?? item.kind}</span>
+              {#if item.duration_secs}
+                <span class="duration">{formatDuration(item.duration_secs)}</span>
+              {/if}
+            </div>
+            <div class="media-meta">
+              <strong title={item.filename}>{item.filename}</strong>
+              <small>
+                {item.ext.toUpperCase()}{#if item.width && item.height} · {item.width}×{item.height}{/if}
+              </small>
+            </div>
+            <button
+              class="download-btn"
+              class:done={queued.has(index)}
+              disabled={queued.has(index) || busy.has(index)}
+              onclick={() => download(item, index)}
+            >
+              {#if queued.has(index)}
+                <AppIcon name="check" size={14} /> 已加入
+              {:else if busy.has(index)}
+                添加中…
+              {:else}
+                <AppIcon name="downloads" size={14} /> 下载
+              {/if}
+            </button>
+          </article>
+        {/each}
+      </div>
+      {#if downloadDir}
+        <p class="save-hint">下载将保存到默认目录：{downloadDir}</p>
+      {/if}
+    {:else}
+      <div class="result-placeholder">
+        <div class="empty-overlay">
+          <AppIcon name="media" size={25} />
+          <strong>解析结果会显示在这里</strong>
+          <span>粘贴帖子地址并点击「解析」</span>
+        </div>
+      </div>
+    {/if}
+  </section>
+
+  <section class="workflow">
+    <div class="section-heading compact">
+      <div>
+        <span class="section-kicker">工作流</span>
+        <h3>从地址到下载任务</h3>
+      </div>
+    </div>
+    <div class="step-grid">
+      {#each steps as [number, title, text]}
+        <article>
+          <span class="step-number">{number}</span>
+          <strong>{title}</strong>
+          <p>{text}</p>
+        </article>
+      {/each}
+    </div>
+  </section>
+</div>
+
+<style>
+  .media-page { display: flex; flex-direction: column; gap: 18px; }
+  .resolver-hero {
+    position: relative;
+    overflow: hidden;
+    padding: 30px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background:
+      radial-gradient(circle at 90% 0%, rgba(83, 111, 255, 0.22), transparent 34%),
+      linear-gradient(135deg, var(--panel), var(--panel-deep));
+  }
+  .resolver-hero::after {
+    position: absolute;
+    width: 230px;
+    height: 230px;
+    right: -90px;
+    bottom: -150px;
+    border: 1px solid rgba(121, 143, 255, 0.18);
+    border-radius: 50%;
+    content: "";
+  }
+  .hero-copy { position: relative; z-index: 1; max-width: 660px; }
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 13px;
+    color: var(--accent-soft);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+  }
+  h2 { margin: 0; font-size: 27px; line-height: 1.25; letter-spacing: -0.025em; }
+  .hero-copy p { margin: 10px 0 24px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+  .resolver-box {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    max-width: 760px;
+    gap: 10px;
+  }
+  .input-wrap {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 0 13px;
+    border: 1px solid #343a4d;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--panel-deep) 88%, transparent);
+    color: var(--muted);
+  }
+  .input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91, 116, 255, 0.12); }
+  .input-wrap input {
+    flex: 1;
+    min-width: 0;
+    padding: 12px 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .clear { padding: 2px 5px; border: 0; background: transparent; color: var(--muted); font-size: 18px; }
+  .resolve-button { min-width: 105px; }
+  .resolve-button:disabled { opacity: 0.6; }
+  .source-list { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+  .source-list span {
+    padding: 4px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .source-list .supported { border-color: rgba(84, 132, 255, 0.4); background: var(--accent-muted); color: var(--accent-soft); }
+  .prototype-note {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 760px;
+    margin-top: 14px;
+    padding: 9px 11px;
+    border: 1px solid rgba(84, 132, 255, 0.26);
+    border-radius: 8px;
+    background: rgba(55, 88, 170, 0.14);
+    color: #c8d6ff;
+    font-size: 12px;
+  }
+  .prototype-note.message-error { border-color: rgba(224, 85, 106, 0.35); background: rgba(140, 50, 70, 0.17); color: #ffc2cc; }
+  .prototype-note.message-success { border-color: rgba(76, 175, 120, 0.35); background: rgba(45, 110, 75, 0.17); color: #b9f0cd; }
+  .note-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .section-block, .workflow {
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--panel);
+  }
+  .section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-heading.compact { margin-bottom: 14px; }
+  .section-kicker { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
+  h3 { margin: 3px 0 0; font-size: 16px; }
+  .primary.small { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 7px 13px; font-size: 12px; }
+  .post-title { margin: 0 0 8px; font-size: 15px; }
+  .post-text { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .media-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel-deep);
+  }
+  .thumb { position: relative; aspect-ratio: 16 / 10; background: linear-gradient(145deg, #202a48, #101522); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb-fallback { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted); }
+  .kind-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(13, 16, 24, 0.72);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .duration {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: rgba(13, 16, 24, 0.72);
+    color: #fff;
+    font-size: 10px;
+  }
+  .media-meta { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px 4px; min-width: 0; }
+  .media-meta strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .media-meta small { color: var(--muted); font-size: 11px; }
+  .download-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 8px 12px 12px;
+    padding: 8px 0;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--accent-muted);
+    color: var(--accent-soft);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .download-btn:disabled { opacity: 0.75; }
+  .download-btn.done { border-color: rgba(76, 175, 120, 0.5); background: rgba(45, 110, 75, 0.2); color: #b9f0cd; }
+  .save-hint { margin: 14px 0 0; color: var(--muted); font-size: 11px; }
+  .result-placeholder {
+    position: relative;
+    display: grid;
+    min-height: 200px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel-deep);
+  }
+  .empty-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+  }
+  .empty-overlay strong { margin: 10px 0 4px; color: var(--text); font-size: 13px; }
+  .empty-overlay span { font-size: 11px; }
+  .step-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .step-grid article { position: relative; min-height: 126px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-deep); }
+  .step-number { display: grid; width: 25px; height: 25px; margin-bottom: 15px; place-items: center; border-radius: 7px; background: var(--accent-muted); color: var(--accent-soft); font-size: 11px; font-weight: 700; }
+  .step-grid strong { font-size: 13px; }
+  .step-grid p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  @media (max-width: 900px) {
+    .step-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>

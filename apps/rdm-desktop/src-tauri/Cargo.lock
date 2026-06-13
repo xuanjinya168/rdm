@@ -3256,6 +3256,7 @@ dependencies = [
  "log",
  "rdm-domain",
  "rdm-http",
+ "rdm-resolver",
  "rdm-service",
  "rdm-storage",
  "serde",
@@ -3310,6 +3311,18 @@ dependencies = [
  "reqwest 0.12.28",
  "thiserror 2.0.18",
  "url",
+]
+
+[[package]]
+name = "rdm-resolver"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]

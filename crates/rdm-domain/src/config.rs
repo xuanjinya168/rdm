@@ -40,6 +40,7 @@ pub struct AppSettings {
     pub retry_count: i64,
     pub clipboard_monitoring: bool,
     pub minimize_to_tray: bool,
+    pub theme: String,
 }
 
 impl Default for AppSettings {
@@ -52,6 +53,7 @@ impl Default for AppSettings {
             retry_count: 4,
             clipboard_monitoring: true,
             minimize_to_tray: true,
+            theme: "dark".to_string(),
         }
     }
 }
@@ -89,6 +91,11 @@ impl AppSettings {
             },
             clipboard_monitoring: self.clipboard_monitoring,
             minimize_to_tray: self.minimize_to_tray,
+            theme: if matches!(self.theme.as_str(), "light" | "dark") {
+                self.theme.clone()
+            } else {
+                defaults.theme
+            },
         }
     }
 
@@ -124,6 +131,12 @@ impl AppSettings {
             .filter(|s| !s.trim().is_empty())
             .map(str::to_string)
             .unwrap_or(defaults.download_dir);
+        let theme = obj
+            .get("theme")
+            .and_then(Value::as_str)
+            .filter(|theme| matches!(*theme, "light" | "dark"))
+            .map(str::to_string)
+            .unwrap_or(defaults.theme);
 
         Self {
             download_dir,
@@ -133,6 +146,7 @@ impl AppSettings {
             retry_count: bounded("retry_count", 4, 0, MAX_RETRY_COUNT),
             clipboard_monitoring: boolean("clipboard_monitoring", true),
             minimize_to_tray: boolean("minimize_to_tray", true),
+            theme,
         }
     }
 }
@@ -231,7 +245,8 @@ mod tests {
             "speed_limit_bytes": 1.5,        // float -> default 0
             "retry_count": true,             // bool -> default 4
             "clipboard_monitoring": false,
-            "minimize_to_tray": "yes"        // wrong type -> default true
+            "minimize_to_tray": "yes",       // wrong type -> default true
+            "theme": "light"
         });
         let settings = AppSettings::from_value(&raw);
         assert_eq!(settings.download_dir, "D:/dl");
@@ -241,6 +256,7 @@ mod tests {
         assert_eq!(settings.retry_count, 4);
         assert!(!settings.clipboard_monitoring);
         assert!(settings.minimize_to_tray);
+        assert_eq!(settings.theme, "light");
     }
 
     #[test]
@@ -283,6 +299,7 @@ mod tests {
             retry_count: 999,
             clipboard_monitoring: false,
             minimize_to_tray: false,
+            theme: "unsupported".to_string(),
         };
 
         let first = store.save(&invalid).unwrap();

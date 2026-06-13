@@ -17,6 +17,9 @@ export const deleteTask = (id, deleteFile = false) =>
   invoke("delete_task", { id, deleteFile });
 export const openFolder = (path) => invoke("open_folder", { path });
 
+// Resolve a social-media / web post URL into its downloadable media items.
+export const resolveMedia = (url) => invoke("resolve_media", { url });
+
 // Subscriptions (each returns a Promise<unlisten>).
 export const onTaskUpdate = (handler) =>
   listen("task://update", (event) => handler(event.payload));

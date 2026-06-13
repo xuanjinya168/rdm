@@ -1,0 +1,17 @@
+[package]
+name = "rdm-resolver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Media resolver for RDM: turns a social/media post URL into downloadable media items."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

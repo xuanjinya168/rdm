@@ -28,6 +28,7 @@ rdm-domain = { path = "../../../crates/rdm-domain" }
 rdm-storage = { path = "../../../crates/rdm-storage" }
 rdm-http = { path = "../../../crates/rdm-http" }
 rdm-service = { path = "../../../crates/rdm-service" }
+rdm-resolver = { path = "../../../crates/rdm-resolver" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
