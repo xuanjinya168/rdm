@@ -378,7 +378,7 @@ impl EngineInner {
         } else if self.signals.is_paused() {
             self.set_status(TaskStatus::Paused, None);
         } else {
-            self.finish()?;
+            self.finish().await?;
         }
         Ok(())
     }
@@ -790,7 +790,7 @@ impl EngineInner {
         Ok(())
     }
 
-    fn finish(&self) -> Result<(), EngineError> {
+    async fn finish(&self) -> Result<(), EngineError> {
         let (expected, actual, part_path, expected_sha, task_id) = {
             let st = self.state();
             let actual: u64 = st.segments.iter().map(|s| s.downloaded).sum();
@@ -816,7 +816,7 @@ impl EngineInner {
         }
         if let Some(expected_sha) = expected_sha {
             self.set_status(TaskStatus::Verifying, None);
-            let actual_sha = self.calculate_sha256(&part_path)?;
+            let actual_sha = self.calculate_sha256(&part_path).await?;
             self.state().task.actual_sha256 = Some(actual_sha.clone());
             if actual_sha != expected_sha {
                 // The bytes are complete but wrong; drop them so a retry starts
@@ -846,19 +846,31 @@ impl EngineInner {
         Ok(())
     }
 
-    fn calculate_sha256(&self, path: &Path) -> Result<String, EngineError> {
-        let mut file = std::fs::File::open(path)?;
-        let mut hasher = Sha256::new();
-        let mut buffer = vec![0u8; 1024 * 1024];
-        loop {
-            self.check_interrupted()?;
-            let read = file.read(&mut buffer)?;
-            if read == 0 {
-                break;
+    /// Hash the finished file off the async runtime: reading and digesting a
+    /// multi-gigabyte file is pure blocking work, so it runs on the blocking
+    /// pool instead of stalling a tokio worker thread. Safe to read without a
+    /// lock because every segment worker has already joined by `finish`.
+    async fn calculate_sha256(&self, path: &Path) -> Result<String, EngineError> {
+        let path = path.to_path_buf();
+        let signals = Arc::clone(&self.signals);
+        tokio::task::spawn_blocking(move || -> Result<String, EngineError> {
+            let mut file = std::fs::File::open(&path)?;
+            let mut hasher = Sha256::new();
+            let mut buffer = vec![0u8; 1024 * 1024];
+            loop {
+                if signals.should_abort() {
+                    return Err(EngineError::Interrupted);
+                }
+                let read = file.read(&mut buffer)?;
+                if read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..read]);
             }
-            hasher.update(&buffer[..read]);
-        }
-        Ok(to_hex(&hasher.finalize()))
+            Ok(to_hex(&hasher.finalize()))
+        })
+        .await
+        .map_err(|error| EngineError::Download(format!("hashing task failed: {error}")))?
     }
 
     fn set_status(&self, status: TaskStatus, error: Option<String>) {
@@ -902,9 +914,11 @@ impl EngineInner {
 }
 
 fn to_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut hex = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        hex.push_str(&format!("{byte:02x}"));
+    for &byte in bytes {
+        hex.push(HEX[(byte >> 4) as usize] as char);
+        hex.push(HEX[(byte & 0x0f) as usize] as char);
     }
     hex
 }
