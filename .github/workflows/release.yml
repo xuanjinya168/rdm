@@ -1,0 +1,43 @@
+name: Release
+
+# 推送形如 v0.1.0 的 tag 时,自动在云端构建 Windows 安装包并发布 Release。
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: build & release (windows)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rdm-desktop/package-lock.json
+
+      # 桌面 crate 的工具链由 apps/rdm-desktop/src-tauri/rust-toolchain.toml 固定。
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/rdm-desktop/src-tauri
+
+      - name: Install frontend deps
+        working-directory: apps/rdm-desktop
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/rdm-desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "RDM ${{ github.ref_name }}"
+          releaseBody: "RDM ${{ github.ref_name }} 的 Windows 安装包(MSI / NSIS)。"
+          releaseDraft: false
+          prerelease: false
