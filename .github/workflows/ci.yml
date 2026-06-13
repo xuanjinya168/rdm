@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: backend (rust)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rdm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rdm
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  desktop:
+    name: desktop (svelte + tauri)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rdm/apps/rdm-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: rdm/apps/rdm-desktop/package-lock.json
+      # The Tauri crate's toolchain is pinned by src-tauri/rust-toolchain.toml.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rdm/apps/rdm-desktop/src-tauri
+      - run: npm ci
+      - run: npm run build
+      - run: npm run app:build

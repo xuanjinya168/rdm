@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+exclude = ["apps"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "RDM — a Rust HTTP/HTTPS multi-connection download manager"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+directories = "5"
+tempfile = "3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+percent-encoding = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio-util = "0.7"
+futures-util = "0.3"
+sha2 = "0.10"
+bytes = "1"
+wiremock = "0.6"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_IO", "Win32_Storage_FileSystem"] }
+rdm-domain = { path = "crates/rdm-domain" }
+rdm-storage = { path = "crates/rdm-storage" }
+rdm-http = { path = "crates/rdm-http" }
+rdm-engine = { path = "crates/rdm-engine" }
+rdm-service = { path = "crates/rdm-service" }

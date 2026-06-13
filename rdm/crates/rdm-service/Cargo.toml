@@ -1,0 +1,20 @@
+[package]
+name = "rdm-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Download orchestration for RDM: the task queue, scheduler and lifecycle controls."
+
+[dependencies]
+rdm-domain.workspace = true
+rdm-storage.workspace = true
+rdm-http.workspace = true
+rdm-engine.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros", "time"] }
+sha2.workspace = true

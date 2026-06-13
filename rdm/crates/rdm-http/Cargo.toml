@@ -1,0 +1,17 @@
+[package]
+name = "rdm-http"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "HTTP layer for RDM: shared reqwest client, URL probing and download providers."
+
+[dependencies]
+rdm-domain.workspace = true
+reqwest.workspace = true
+url.workspace = true
+percent-encoding.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+wiremock.workspace = true

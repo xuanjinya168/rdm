@@ -1,0 +1,264 @@
+//! Tauri backend for the RDM desktop app.
+//!
+//! Command layer over [`rdm_service::DownloadManager`] plus desktop
+//! integration ported from the Python app: single-instance + URL handoff,
+//! system tray with close-to-tray, graceful shutdown on quit, and opening a
+//! task's folder. The frontend subscribes to `task://update` for live progress
+//! and to `rdm://open-url` / `rdm://new-download` for tray/second-instance
+//! triggers.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use serde::Serialize;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+
+use rdm_domain::config::{AppSettings, SettingsStore};
+use rdm_domain::validation::is_http_url;
+use rdm_domain::DownloadTask;
+use rdm_http::ProviderRegistry;
+use rdm_service::DownloadManager;
+use rdm_storage::DownloadDatabase;
+
+/// Shared application state managed by Tauri.
+struct AppState {
+    manager: DownloadManager,
+    settings_store: SettingsStore,
+    /// Set when the user really wants to quit, so the close handler exits
+    /// instead of hiding to the tray.
+    force_quit: AtomicBool,
+}
+
+/// Payload pushed to the frontend on each progress update.
+#[derive(Serialize, Clone)]
+struct ProgressPayload {
+    task: DownloadTask,
+    speed: f64,
+}
+
+#[tauri::command]
+fn list_tasks(state: State<'_, AppState>) -> Vec<DownloadTask> {
+    state.manager.all_tasks()
+}
+
+#[tauri::command]
+fn get_settings(state: State<'_, AppState>) -> AppSettings {
+    state.manager.settings()
+}
+
+#[tauri::command]
+fn add_download(
+    state: State<'_, AppState>,
+    url: String,
+    destination: Option<String>,
+    connections: Option<u32>,
+    filename: Option<String>,
+    sha256: Option<String>,
+) -> Result<DownloadTask, String> {
+    let destination = destination
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| state.manager.settings().download_dir);
+    state
+        .manager
+        .add_download(
+            &url,
+            std::path::Path::new(&destination),
+            connections,
+            filename.as_deref().unwrap_or_default(),
+            sha256.as_deref().unwrap_or_default(),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn start_task(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.manager.start(&id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn pause_task(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.manager.pause(&id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn cancel_task(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.manager.cancel(&id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn delete_task(state: State<'_, AppState>, id: String, delete_file: bool) -> Result<bool, String> {
+    state
+        .manager
+        .delete(&id, delete_file)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<(), String> {
+    state
+        .settings_store
+        .save(&settings)
+        .map_err(|error| error.to_string())?;
+    state.manager.update_settings(settings);
+    Ok(())
+}
+
+/// Open a task's destination folder in the system file manager.
+#[tauri::command]
+fn open_folder(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let _ = std::fs::create_dir_all(&path);
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+/// The first http/https URL among CLI args, mirroring Python `first_http_url`.
+fn first_http_url(args: &[String]) -> Option<String> {
+    args.iter().find(|arg| is_http_url(arg)).cloned()
+}
+
+/// Reveal and focus the main window.
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// Begin a graceful quit: pause/persist in-flight downloads, then exit.
+fn quit_app(app: &AppHandle) {
+    let manager = {
+        let state = app.state::<AppState>();
+        state.force_quit.store(true, Ordering::SeqCst);
+        state.manager.clone()
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        manager.shutdown().await;
+        app.exit(0);
+    });
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let new = MenuItem::with_id(app, "new", "新建下载", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &new, &separator, &quit])?;
+
+    let mut builder = TrayIconBuilder::with_id("rdm-tray")
+        .tooltip("RDM 下载管理器")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => show_main_window(app),
+            "new" => {
+                show_main_window(app);
+                let _ = app.emit("rdm://new-download", ());
+            }
+            "quit" => quit_app(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
+/// Build and run the Tauri application.
+pub fn run() {
+    let mut builder = tauri::Builder::default();
+
+    // Single-instance must be registered first: a second launch hands its URL
+    // to the running instance (which surfaces the window and opens the add
+    // dialog) and then exits.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            show_main_window(app);
+            if let Some(url) = first_http_url(&argv) {
+                let _ = app.emit("rdm://open-url", url);
+            }
+        }));
+    }
+
+    builder
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .setup(|app| {
+            let database = Arc::new(DownloadDatabase::open(None)?);
+            let settings_store = SettingsStore::new(None);
+            let settings = settings_store.load();
+
+            // DownloadManager spawns its scheduler with tokio::spawn, so it must
+            // be constructed inside a runtime context; Tauri's async runtime is
+            // tokio, and the spawned scheduler outlives this block.
+            let manager = tauri::async_runtime::block_on(async {
+                DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default()))
+            });
+
+            let emitter = app.handle().clone();
+            manager.add_listener(Arc::new(move |task, speed| {
+                let _ = emitter.emit("task://update", ProgressPayload { task, speed });
+            }));
+
+            app.manage(AppState {
+                manager,
+                settings_store,
+                force_quit: AtomicBool::new(false),
+            });
+
+            build_tray(app.handle())?;
+
+            // Open the add dialog if launched with a URL argument.
+            if let Some(url) = first_http_url(&std::env::args().collect::<Vec<_>>()) {
+                let _ = app.handle().emit("rdm://open-url", url);
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<AppState>();
+                let minimize = state.manager.settings().minimize_to_tray;
+                if minimize && !state.force_quit.load(Ordering::SeqCst) {
+                    // Keep downloading in the background.
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    // Exit only after engines have wound down.
+                    api.prevent_close();
+                    quit_app(window.app_handle());
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            list_tasks,
+            get_settings,
+            add_download,
+            start_task,
+            pause_task,
+            cancel_task,
+            delete_task,
+            save_settings,
+            open_folder,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running RDM desktop");
+}

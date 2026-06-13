@@ -1,0 +1,36 @@
+# This crate is its own workspace (empty [workspace] below) so the Tauri build
+# stays independent of the backend workspace at ../../.. — keeping `cargo test`
+# there free of the heavy Tauri/WebView toolchain.
+[package]
+name = "rdm-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "RDM desktop application"
+
+[lib]
+name = "rdm_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rdm-domain = { path = "../../../crates/rdm-domain" }
+rdm-storage = { path = "../../../crates/rdm-storage" }
+rdm-http = { path = "../../../crates/rdm-http" }
+rdm-service = { path = "../../../crates/rdm-service" }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[workspace]

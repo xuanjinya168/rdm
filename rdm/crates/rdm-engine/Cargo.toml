@@ -1,0 +1,25 @@
+[package]
+name = "rdm-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Segmented download engine for RDM: rate limiting, part files and the async download loop."
+
+[dependencies]
+rdm-domain.workspace = true
+rdm-storage.workspace = true
+rdm-http.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time", "sync", "fs", "io-util"] }
+tokio-util.workspace = true
+futures-util.workspace = true
+sha2.workspace = true
+bytes.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros", "time"] }

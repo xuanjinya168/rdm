@@ -1,0 +1,14 @@
+[package]
+name = "rdm-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SQLite persistence for RDM: task and segment storage with schema migrations."
+
+[dependencies]
+rdm-domain.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
