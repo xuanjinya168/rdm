@@ -82,10 +82,7 @@ impl InstagramResolver {
         let variables = format!(r#"{{"shortcode":"{shortcode}"}}"#);
         let response = client
             .get(GRAPHQL_URL)
-            .query(&[
-                ("doc_id", DOC_ID),
-                ("variables", variables.as_str()),
-            ])
+            .query(&[("doc_id", DOC_ID), ("variables", variables.as_str())])
             .header("x-ig-app-id", APP_ID)
             .header("accept", "*/*")
             .header("referer", "https://www.instagram.com/")
@@ -95,7 +92,12 @@ impl InstagramResolver {
         Ok(response.json().await?)
     }
 
-    fn parse(&self, source_url: &str, shortcode: &str, body: &Value) -> Result<ResolvedPost, ResolveError> {
+    fn parse(
+        &self,
+        source_url: &str,
+        shortcode: &str,
+        body: &Value,
+    ) -> Result<ResolvedPost, ResolveError> {
         let media_root = body
             .pointer("/data/xdt_shortcode_media")
             .filter(|v| !v.is_null())
@@ -135,14 +137,19 @@ impl InstagramResolver {
     /// Append the media described by one node (`xdt_shortcode_media` or a
     /// sidecar child) to `media`.
     fn push_node(media: &mut Vec<MediaItem>, shortcode: &str, node: &Value) {
-        let is_video = node.get("is_video").and_then(Value::as_bool).unwrap_or(false);
-        let width = node.pointer("/dimensions/width").and_then(Value::as_u64).unwrap_or(0) as u32;
+        let is_video = node
+            .get("is_video")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let width = node
+            .pointer("/dimensions/width")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32;
         let height = node
             .pointer("/dimensions/height")
             .and_then(Value::as_u64)
             .unwrap_or(0) as u32;
         let index = media.len() + 1;
-        let display_url = node.get("display_url").and_then(Value::as_str);
 
         if is_video {
             let Some(url) = node.get("video_url").and_then(Value::as_str) else {
@@ -155,7 +162,6 @@ impl InstagramResolver {
             media.push(MediaItem {
                 kind: MediaKind::Video,
                 url: url.to_string(),
-                thumb_url: display_url.map(str::to_owned),
                 width,
                 height,
                 duration_secs: duration,
@@ -163,14 +169,13 @@ impl InstagramResolver {
                 filename: format!("{shortcode}_{index}.mp4"),
             });
         } else {
-            let Some(url) = display_url else {
+            let Some(url) = node.get("display_url").and_then(Value::as_str) else {
                 return;
             };
             let ext = url_ext(url, "jpg");
             media.push(MediaItem {
                 kind: MediaKind::Image,
                 url: url.to_string(),
-                thumb_url: Some(url.to_string()),
                 width,
                 height,
                 duration_secs: None,
@@ -236,7 +241,10 @@ mod tests {
             InstagramResolver::shortcode("https://www.instagram.com/someuser/p/AAA111/"),
             Some("AAA111".into())
         );
-        assert_eq!(InstagramResolver::shortcode("https://www.instagram.com/someuser/"), None);
+        assert_eq!(
+            InstagramResolver::shortcode("https://www.instagram.com/someuser/"),
+            None
+        );
     }
 
     #[test]
@@ -299,7 +307,6 @@ mod tests {
         let video = &post.media[1];
         assert_eq!(video.kind, MediaKind::Video);
         assert_eq!(video.url, "https://cdn/clip.mp4");
-        assert_eq!(video.thumb_url.as_deref(), Some("https://cdn/thumb.jpg"));
         assert_eq!(video.duration_secs, Some(13));
         assert_eq!(video.filename, "BBB_2.mp4");
     }

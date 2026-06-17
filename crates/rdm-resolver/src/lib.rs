@@ -1,8 +1,8 @@
 //! Media resolver layer for RDM.
 //!
 //! Turns a social-media / web post URL into a [`ResolvedPost`] — a flat list of
-//! directly downloadable [`MediaItem`]s plus the post text — so the desktop app
-//! can preview them and hand each file to the download engine.
+//! directly downloadable [`MediaItem`]s plus the post text, so the desktop app
+//! can hand each file to the download engine.
 //!
 //! Ported from the Python project ParseHub (<https://github.com/z-mio/ParseHub>).
 //! Twitter / X is implemented today; other platforms plug in by adding another

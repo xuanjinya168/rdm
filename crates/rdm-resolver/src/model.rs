@@ -35,8 +35,6 @@ pub struct MediaItem {
     pub kind: MediaKind,
     /// Direct URL of the highest-quality variant to download.
     pub url: String,
-    /// Preview/thumbnail URL, when the platform provides one.
-    pub thumb_url: Option<String>,
     /// Pixel width of the original media, if known (`0` when unknown).
     pub width: u32,
     /// Pixel height of the original media, if known (`0` when unknown).

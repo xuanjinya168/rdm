@@ -14,18 +14,9 @@
   let queued = $state(new Set()); // indices already sent to the download engine
   let busy = $state(new Set()); // indices currently being queued
 
-  const kindLabel = { image: "图片", video: "视频", gif: "动图" };
-
   function setMessage(text, type = "info") {
     message = text;
     messageType = type;
-  }
-
-  function formatDuration(secs) {
-    if (!secs) return "";
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${String(s).padStart(2, "0")}`;
   }
 
   async function resolve(event) {
@@ -137,13 +128,6 @@
       <div class="media-grid">
         {#each post.media as item, index}
           <article class="media-card">
-            <div class="thumb">
-              <div class="thumb-fallback"><AppIcon name="media" size={22} /></div>
-              <span class="kind-badge">{kindLabel[item.kind] ?? item.kind}</span>
-              {#if item.duration_secs}
-                <span class="duration">{formatDuration(item.duration_secs)}</span>
-              {/if}
-            </div>
             <div class="media-meta">
               <strong title={item.filename}>{item.filename}</strong>
               <small>
@@ -297,29 +281,6 @@
     border: 1px solid var(--line);
     border-radius: 12px;
     background: var(--panel-deep);
-  }
-  .thumb { position: relative; aspect-ratio: 16 / 10; background: linear-gradient(145deg, #202a48, #101522); }
-  .thumb-fallback { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted); }
-  .kind-badge {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: rgba(13, 16, 24, 0.72);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 600;
-  }
-  .duration {
-    position: absolute;
-    right: 8px;
-    bottom: 8px;
-    padding: 1px 6px;
-    border-radius: 5px;
-    background: rgba(13, 16, 24, 0.72);
-    color: #fff;
-    font-size: 10px;
   }
   .media-meta { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px 4px; min-width: 0; }
   .media-meta strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

@@ -32,9 +32,7 @@ impl ThreadsResolver {
         let path = url.split(['?', '#']).next().unwrap_or(url);
         let segments: Vec<&str> = path.split('/').collect();
         for (i, segment) in segments.iter().enumerate() {
-            if segment.starts_with('@')
-                && segment.len() > 1
-                && segments.get(i + 1) == Some(&"post")
+            if segment.starts_with('@') && segment.len() > 1 && segments.get(i + 1) == Some(&"post")
             {
                 let post_id = segments.get(i + 2).filter(|p| !p.is_empty())?;
                 return Some((segment.to_string(), post_id.to_string()));
@@ -45,7 +43,12 @@ impl ThreadsResolver {
 
     /// A random alphanumeric `lsd` token, like the web client generates.
     fn random_lsd() -> String {
-        uuid::Uuid::new_v4().simple().to_string().chars().take(11).collect()
+        uuid::Uuid::new_v4()
+            .simple()
+            .to_string()
+            .chars()
+            .take(11)
+            .collect()
     }
 
     async fn fetch(
@@ -223,7 +226,6 @@ fn image_item(node: &Value, post_id: &str, index: usize) -> Option<MediaItem> {
     Some(MediaItem {
         kind: MediaKind::Image,
         url: url.to_string(),
-        thumb_url: Some(url.to_string()),
         width,
         height,
         duration_secs: None,
@@ -233,18 +235,21 @@ fn image_item(node: &Value, post_id: &str, index: usize) -> Option<MediaItem> {
 }
 
 fn video_item(node: &Value, post_id: &str, index: usize) -> Option<MediaItem> {
-    let url = node.pointer("/video_versions/0/url").and_then(Value::as_str)?;
-    let thumb = node
-        .pointer("/image_versions2/candidates/0/url")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let width = node.get("original_width").and_then(Value::as_u64).unwrap_or(0) as u32;
-    let height = node.get("original_height").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let url = node
+        .pointer("/video_versions/0/url")
+        .and_then(Value::as_str)?;
+    let width = node
+        .get("original_width")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let height = node
+        .get("original_height")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
     let ext = url_ext(url, "mp4");
     Some(MediaItem {
         kind: MediaKind::Video,
         url: url.to_string(),
-        thumb_url: thumb,
         width,
         height,
         duration_secs: None,
@@ -283,7 +288,10 @@ mod tests {
             ThreadsResolver::locate("https://www.threads.net/@jack/post/XYZ?x=1"),
             Some(("@jack".into(), "XYZ".into()))
         );
-        assert_eq!(ThreadsResolver::locate("https://www.threads.com/@jack"), None);
+        assert_eq!(
+            ThreadsResolver::locate("https://www.threads.com/@jack"),
+            None
+        );
     }
 
     #[test]
@@ -338,7 +346,8 @@ mod tests {
                 }}}}
             }),
         ];
-        let post = ThreadsResolver::new().parse("https://www.threads.com/@u/post/PID/", "PID", &objects);
+        let post =
+            ThreadsResolver::new().parse("https://www.threads.com/@u/post/PID/", "PID", &objects);
         assert_eq!(post.text, "hello threads");
         assert_eq!(post.media.len(), 2);
         assert_eq!(post.media[0].kind, MediaKind::Image);
@@ -347,7 +356,6 @@ mod tests {
         let video = &post.media[1];
         assert_eq!(video.kind, MediaKind::Video);
         assert_eq!(video.url, "https://cdn/v.mp4");
-        assert_eq!(video.thumb_url.as_deref(), Some("https://cdn/t.jpg"));
         assert_eq!(video.width, 720);
         assert_eq!(video.filename, "PID_2.mp4");
     }
@@ -364,7 +372,8 @@ mod tests {
                 "original_width": 1080, "original_height": 1920
             }}}}
         })];
-        let post = ThreadsResolver::new().parse("https://www.threads.com/@u/post/V/", "V", &objects);
+        let post =
+            ThreadsResolver::new().parse("https://www.threads.com/@u/post/V/", "V", &objects);
         assert_eq!(post.media.len(), 1);
         assert_eq!(post.media[0].kind, MediaKind::Video);
         assert_eq!(post.media[0].url, "https://cdn/clip.mp4");
