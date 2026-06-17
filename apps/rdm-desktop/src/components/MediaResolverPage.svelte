@@ -73,12 +73,6 @@
     setMessage("已将全部媒体加入下载中心。", "success");
   }
 
-  const steps = [
-    ["1", "识别来源", "匹配站点解析器或通用网页解析器"],
-    ["2", "提取媒体", "读取视频、音频、字幕和封面信息"],
-    ["3", "选择版本", "按清晰度、编码和文件大小进行选择"],
-    ["4", "创建任务", "生成下载计划并交给下载引擎执行"],
-  ];
 </script>
 
 <div class="media-page">
@@ -191,23 +185,6 @@
     {/if}
   </section>
 
-  <section class="workflow">
-    <div class="section-heading compact">
-      <div>
-        <span class="section-kicker">工作流</span>
-        <h3>从地址到下载任务</h3>
-      </div>
-    </div>
-    <div class="step-grid">
-      {#each steps as [number, title, text]}
-        <article>
-          <span class="step-number">{number}</span>
-          <strong>{title}</strong>
-          <p>{text}</p>
-        </article>
-      {/each}
-    </div>
-  </section>
 </div>
 
 <style>
@@ -304,14 +281,13 @@
   .prototype-note.message-error { border-color: rgba(224, 85, 106, 0.35); background: rgba(140, 50, 70, 0.17); color: #ffc2cc; }
   .prototype-note.message-success { border-color: rgba(76, 175, 120, 0.35); background: rgba(45, 110, 75, 0.17); color: #b9f0cd; }
   .note-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .section-block, .workflow {
+  .section-block {
     padding: 20px;
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background: var(--panel);
   }
   .section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .section-heading.compact { margin-bottom: 14px; }
   .section-kicker { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
   h3 { margin: 3px 0 0; font-size: 16px; }
   .primary.small { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 7px 13px; font-size: 12px; }
@@ -388,12 +364,4 @@
   }
   .empty-overlay strong { margin: 10px 0 4px; color: var(--text); font-size: 13px; }
   .empty-overlay span { font-size: 11px; }
-  .step-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-  .step-grid article { position: relative; min-height: 126px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-deep); }
-  .step-number { display: grid; width: 25px; height: 25px; margin-bottom: 15px; place-items: center; border-radius: 7px; background: var(--accent-muted); color: var(--accent-soft); font-size: 11px; font-weight: 700; }
-  .step-grid strong { font-size: 13px; }
-  .step-grid p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
-  @media (max-width: 900px) {
-    .step-grid { grid-template-columns: repeat(2, 1fr); }
-  }
 </style>
