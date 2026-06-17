@@ -10,7 +10,7 @@ pub mod error;
 pub mod probe;
 pub mod provider;
 
-pub use client::{build_client, USER_AGENT};
+pub use client::{build_client, ProxyConfig, USER_AGENT};
 pub use error::HttpError;
 pub use probe::{parse_content_range, probe_url, ContentRange, ProbeResult};
 pub use provider::{DownloadProvider, HttpDownloadProvider, PreparedDownload, ProviderRegistry};

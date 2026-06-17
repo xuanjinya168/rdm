@@ -8,7 +8,7 @@
 //! triggers.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -19,7 +19,7 @@ use rdm_domain::config::{AppSettings, SettingsStore};
 use rdm_domain::validation::is_http_url;
 use rdm_domain::DownloadTask;
 use rdm_http::ProviderRegistry;
-use rdm_resolver::{ResolvedPost, ResolverRegistry};
+use rdm_resolver::{ProxyConfig, ResolvedPost, ResolverRegistry};
 use rdm_service::DownloadManager;
 use rdm_storage::DownloadDatabase;
 
@@ -28,10 +28,38 @@ struct AppState {
     manager: DownloadManager,
     settings_store: SettingsStore,
     /// Resolves social-media / web post URLs into downloadable media items.
-    resolvers: Arc<ResolverRegistry>,
+    /// Held behind a mutex so it can be rebuilt when the proxy setting changes
+    /// without restarting the app.
+    resolvers: Mutex<Arc<ResolverRegistry>>,
     /// Set when the user really wants to quit, so the close handler exits
     /// instead of hiding to the tray.
     force_quit: AtomicBool,
+}
+
+/// Translate the proxy portion of [`AppSettings`] into a resolver
+/// [`ProxyConfig`]; an inactive config when proxying is disabled.
+fn proxy_from_settings(settings: &AppSettings) -> ProxyConfig {
+    if settings.proxy_enabled {
+        ProxyConfig {
+            url: settings.proxy_url.clone(),
+            username: settings.proxy_username.clone(),
+            password: settings.proxy_password.clone(),
+        }
+    } else {
+        ProxyConfig::default()
+    }
+}
+
+/// Rebuild the resolver registry from `settings`, replacing the one in state.
+/// Logged on failure rather than propagated: a broken registry just means
+/// media resolution is unavailable while downloads keep working.
+fn rebuild_resolvers(state: &AppState, settings: &AppSettings) {
+    match ResolverRegistry::new(proxy_from_settings(settings)) {
+        Ok(registry) => {
+            *state.resolvers.lock().unwrap() = Arc::new(registry);
+        }
+        Err(error) => log::error!("Failed to rebuild media resolvers: {error}"),
+    }
 }
 
 /// Payload pushed to the frontend on each progress update.
@@ -103,11 +131,17 @@ fn save_settings(
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
+    // The resolver client is built once and held behind a mutex; rebuild it
+    // only when the proxy actually changes, since downloads read settings live.
+    let old_proxy = proxy_from_settings(&state.manager.settings());
     let validated = state
         .settings_store
         .save(&settings)
         .map_err(|error| error.to_string())?;
     state.manager.update_settings(validated.clone());
+    if proxy_from_settings(&validated) != old_proxy {
+        rebuild_resolvers(&state, &validated);
+    }
     Ok(validated)
 }
 
@@ -117,7 +151,7 @@ fn save_settings(
 /// future does not borrow `State` across suspension points.
 #[tauri::command]
 async fn resolve_media(state: State<'_, AppState>, url: String) -> Result<ResolvedPost, String> {
-    let resolvers = state.resolvers.clone();
+    let resolvers = state.resolvers.lock().unwrap().clone();
     resolvers
         .resolve(url.trim())
         .await
@@ -248,7 +282,7 @@ pub fn run() {
             // be constructed inside a runtime context; Tauri's async runtime is
             // tokio, and the spawned scheduler outlives this block.
             let manager = tauri::async_runtime::block_on(async {
-                DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default()))
+                DownloadManager::new(database, settings.clone(), Arc::new(ProviderRegistry::default()))
             })?;
 
             let emitter = app.handle().clone();
@@ -256,12 +290,12 @@ pub fn run() {
                 let _ = emitter.emit("task://update", ProgressPayload { task, speed });
             }));
 
-            let resolvers = Arc::new(ResolverRegistry::new()?);
+            let resolvers = Arc::new(ResolverRegistry::new(proxy_from_settings(&settings))?);
 
             app.manage(AppState {
                 manager,
                 settings_store,
-                resolvers,
+                resolvers: Mutex::new(resolvers),
                 force_quit: AtomicBool::new(false),
             });
 

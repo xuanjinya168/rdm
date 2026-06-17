@@ -12,6 +12,7 @@ thiserror.workspace = true
 async-trait.workspace = true
 uuid.workspace = true
 reqwest = { workspace = true, features = ["json"] }
+log.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

@@ -41,6 +41,14 @@ pub struct AppSettings {
     pub clipboard_monitoring: bool,
     pub minimize_to_tray: bool,
     pub theme: String,
+    /// When true, outbound download/resolve requests go through `proxy_url`.
+    pub proxy_enabled: bool,
+    /// Proxy address, e.g. `http://127.0.0.1:7890` or `socks5://127.0.0.1:1080`.
+    pub proxy_url: String,
+    /// Optional username for proxy authentication.
+    pub proxy_username: String,
+    /// Optional password for proxy authentication.
+    pub proxy_password: String,
 }
 
 impl Default for AppSettings {
@@ -54,6 +62,10 @@ impl Default for AppSettings {
             clipboard_monitoring: true,
             minimize_to_tray: true,
             theme: "dark".to_string(),
+            proxy_enabled: false,
+            proxy_url: String::new(),
+            proxy_username: String::new(),
+            proxy_password: String::new(),
         }
     }
 }
@@ -96,6 +108,13 @@ impl AppSettings {
             } else {
                 defaults.theme
             },
+            // Proxy URL/credentials are trimmed here; protocol validity is left
+            // to reqwest when the client is built, where a bad value falls back
+            // to a direct connection rather than breaking downloads.
+            proxy_enabled: self.proxy_enabled,
+            proxy_url: self.proxy_url.trim().to_string(),
+            proxy_username: self.proxy_username.trim().to_string(),
+            proxy_password: self.proxy_password.clone(),
         }
     }
 
@@ -137,6 +156,23 @@ impl AppSettings {
             .filter(|theme| matches!(*theme, "light" | "dark"))
             .map(str::to_string)
             .unwrap_or(defaults.theme);
+        let proxy_url = obj
+            .get("proxy_url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .map(str::to_string)
+            .unwrap_or(defaults.proxy_url);
+        let proxy_username = obj
+            .get("proxy_username")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .map(str::to_string)
+            .unwrap_or(defaults.proxy_username);
+        let proxy_password = obj
+            .get("proxy_password")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or(defaults.proxy_password);
 
         Self {
             download_dir,
@@ -147,6 +183,10 @@ impl AppSettings {
             clipboard_monitoring: boolean("clipboard_monitoring", true),
             minimize_to_tray: boolean("minimize_to_tray", true),
             theme,
+            proxy_enabled: boolean("proxy_enabled", false),
+            proxy_url,
+            proxy_username,
+            proxy_password,
         }
     }
 }
@@ -246,7 +286,11 @@ mod tests {
             "retry_count": true,             // bool -> default 4
             "clipboard_monitoring": false,
             "minimize_to_tray": "yes",       // wrong type -> default true
-            "theme": "light"
+            "theme": "light",
+            "proxy_enabled": true,
+            "proxy_url": "  socks5://127.0.0.1:1080  ",
+            "proxy_username": "  user  ",
+            "proxy_password": "pw"
         });
         let settings = AppSettings::from_value(&raw);
         assert_eq!(settings.download_dir, "D:/dl");
@@ -257,6 +301,10 @@ mod tests {
         assert!(!settings.clipboard_monitoring);
         assert!(settings.minimize_to_tray);
         assert_eq!(settings.theme, "light");
+        assert!(settings.proxy_enabled);
+        assert_eq!(settings.proxy_url, "socks5://127.0.0.1:1080");
+        assert_eq!(settings.proxy_username, "user");
+        assert_eq!(settings.proxy_password, "pw");
     }
 
     #[test]
@@ -300,6 +348,10 @@ mod tests {
             clipboard_monitoring: false,
             minimize_to_tray: false,
             theme: "unsupported".to_string(),
+            proxy_enabled: false,
+            proxy_url: "  ".to_string(),
+            proxy_username: "  ".to_string(),
+            proxy_password: String::new(),
         };
 
         let first = store.save(&invalid).unwrap();
@@ -312,6 +364,7 @@ mod tests {
             }
         );
         assert_eq!(store.load(), first);
+        assert_eq!(first.proxy_url, ""); // trimmed from whitespace
 
         let replacement = AppSettings {
             download_dir: "D:/downloads".to_string(),
@@ -329,5 +382,35 @@ mod tests {
         fs::write(&path, "{ not json").unwrap();
         let store = SettingsStore::new(Some(path));
         assert_eq!(store.load(), AppSettings::default());
+    }
+
+    #[test]
+    fn proxy_fields_default_and_validate() {
+        // Missing proxy fields fall back to defaults (proxy disabled).
+        let settings = AppSettings::from_value(&serde_json::json!({}));
+        assert!(!settings.proxy_enabled);
+        assert_eq!(settings.proxy_url, "");
+        assert_eq!(settings.proxy_username, "");
+        assert_eq!(settings.proxy_password, "");
+
+        // Wrong type for proxy_enabled -> default false.
+        let settings = AppSettings::from_value(&serde_json::json!({
+            "proxy_enabled": "yes"
+        }));
+        assert!(!settings.proxy_enabled);
+
+        // validated() trims surrounding whitespace on url/username but keeps
+        // the password verbatim.
+        let raw = AppSettings {
+            proxy_enabled: true,
+            proxy_url: "  http://127.0.0.1:7890  ".to_string(),
+            proxy_username: "  user  ".to_string(),
+            proxy_password: "  secret  ".to_string(),
+            ..AppSettings::default()
+        };
+        let v = raw.validated();
+        assert_eq!(v.proxy_url, "http://127.0.0.1:7890");
+        assert_eq!(v.proxy_username, "user");
+        assert_eq!(v.proxy_password, "  secret  ");
     }
 }

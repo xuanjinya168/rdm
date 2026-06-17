@@ -8,6 +8,25 @@ use crate::model::ResolvedPost;
 use crate::threads::ThreadsResolver;
 use crate::twitter::TwitterResolver;
 
+/// Optional proxy configuration applied to the media-resolver client.
+///
+/// Mirrors `rdm_http::ProxyConfig`; duplicated here to keep `rdm-resolver`
+/// independent of the download HTTP layer. `url` may be `http://`, `https://`
+/// or `socks5://`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProxyConfig {
+    pub url: String,
+    pub username: String,
+    pub password: String,
+}
+
+impl ProxyConfig {
+    /// Whether this configuration actually requests a proxy.
+    pub fn is_active(&self) -> bool {
+        !self.url.trim().is_empty()
+    }
+}
+
 /// A per-platform resolver. Implementations turn a post URL into the set of
 /// media files it contains. They must be shareable across worker threads.
 #[async_trait]
@@ -36,14 +55,32 @@ pub struct ResolverRegistry {
 
 impl ResolverRegistry {
     /// Build the registry with every supported platform wired in.
-    pub fn new() -> Result<Self, ResolveError> {
+    ///
+    /// `proxy` optionally routes every request through a proxy. The URL may use
+    /// the `http://`, `https://` or `socks5://` scheme; when `username` is
+    /// non-empty it is sent as Basic auth. A proxy that reqwest cannot parse is
+    /// logged and skipped so resolution still works over a direct connection.
+    pub fn new(proxy: ProxyConfig) -> Result<Self, ResolveError> {
         // A browser-like UA: some endpoints reject the default reqwest agent.
-        let client = reqwest::Client::builder()
-            .user_agent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-                 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            )
-            .build()?;
+        let mut builder = reqwest::Client::builder().user_agent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        );
+        if proxy.is_active() {
+            match reqwest::Proxy::all(&proxy.url) {
+                Ok(mut p) => {
+                    if !proxy.username.is_empty() {
+                        p = p.basic_auth(&proxy.username, &proxy.password);
+                    }
+                    builder = builder.proxy(p);
+                }
+                Err(error) => log::warn!(
+                    "Ignoring invalid media-resolver proxy {:?}: {error}",
+                    proxy.url
+                ),
+            }
+        }
+        let client = builder.build()?;
         Ok(Self {
             client,
             resolvers: vec![

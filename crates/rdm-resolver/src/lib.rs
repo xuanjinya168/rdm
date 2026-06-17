@@ -19,6 +19,6 @@ pub mod util;
 pub use error::ResolveError;
 pub use instagram::InstagramResolver;
 pub use model::{MediaItem, MediaKind, ResolvedPost};
-pub use resolver::{MediaResolver, ResolverRegistry};
+pub use resolver::{MediaResolver, ProxyConfig, ResolverRegistry};
 pub use threads::ThreadsResolver;
 pub use twitter::TwitterResolver;

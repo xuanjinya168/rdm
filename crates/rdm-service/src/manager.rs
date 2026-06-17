@@ -10,7 +10,7 @@ use tokio::sync::Notify;
 use rdm_domain::config::AppSettings;
 use rdm_domain::{DownloadTask, TaskStatus};
 use rdm_engine::{DownloadEngine, EngineHandle, RateLimiter, UpdateCallback};
-use rdm_http::{build_client, ProviderRegistry};
+use rdm_http::{build_client, ProviderRegistry, ProxyConfig};
 use rdm_storage::DownloadDatabase;
 
 use crate::error::ServiceError;
@@ -314,11 +314,15 @@ impl ManagerInner {
     /// Spawn an engine for `task`, tracking its handle and reaping it on
     /// completion.
     fn launch(self: &Arc<Self>, task: DownloadTask) {
-        let (retry_count, connections) = {
+        let (retry_count, connections, proxy) = {
             let state = self.state();
-            (state.settings.retry_count.max(0) as u32, task.connections)
+            (
+                state.settings.retry_count.max(0) as u32,
+                task.connections,
+                proxy_from_settings(&state.settings),
+            )
         };
-        let client = build_client(connections).unwrap_or_default();
+        let client = build_client(connections, &proxy).unwrap_or_default();
         let engine = DownloadEngine::new(
             task.clone(),
             Arc::clone(&self.database),
@@ -344,6 +348,22 @@ impl ManagerInner {
             }
             inner.wakeup.notify_one();
         });
+    }
+}
+
+/// Translate the proxy portion of [`AppSettings`] into a [`ProxyConfig`].
+///
+/// When proxying is disabled the returned config is inactive, so the client
+/// falls back to reqwest's defaults.
+fn proxy_from_settings(settings: &AppSettings) -> ProxyConfig {
+    if settings.proxy_enabled {
+        ProxyConfig {
+            url: settings.proxy_url.clone(),
+            username: settings.proxy_username.clone(),
+            password: settings.proxy_password.clone(),
+        }
+    } else {
+        ProxyConfig::default()
     }
 }
 

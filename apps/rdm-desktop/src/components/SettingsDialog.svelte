@@ -20,6 +20,10 @@
   let clipboard = $state(untrack(() => settings.clipboard_monitoring));
   let tray = $state(untrack(() => settings.minimize_to_tray));
   let theme = $state(untrack(() => settings.theme ?? "dark"));
+  let proxyEnabled = $state(untrack(() => settings.proxy_enabled ?? false));
+  let proxyUrl = $state(untrack(() => settings.proxy_url ?? ""));
+  let proxyUsername = $state(untrack(() => settings.proxy_username ?? ""));
+  let proxyPassword = $state(untrack(() => settings.proxy_password ?? ""));
   let error = $state("");
   let saving = $state(false);
   let section = $state("downloads");
@@ -45,6 +49,14 @@
       error = "请选择默认下载目录。";
       return;
     }
+    if (proxyEnabled && !proxyUrl.trim()) {
+      error = "已启用代理，请填写代理地址。";
+      return;
+    }
+    if (proxyUrl.trim() && !/^https?:\/\//i.test(proxyUrl.trim()) && !/^socks5h?:\/\//i.test(proxyUrl.trim())) {
+      error = "代理地址需以 http://、https:// 或 socks5:// 开头。";
+      return;
+    }
     saving = true;
     try {
       await onsave({
@@ -56,6 +68,10 @@
         clipboard_monitoring: clipboard,
         minimize_to_tray: tray,
         theme,
+        proxy_enabled: proxyEnabled,
+        proxy_url: proxyUrl.trim(),
+        proxy_username: proxyUsername.trim(),
+        proxy_password: proxyPassword,
       });
     } catch (saveError) {
       error = String(saveError);
@@ -95,6 +111,9 @@
       <nav class="settings-nav" aria-label="设置分类">
         <button class:active={section === "downloads"} type="button" onclick={() => (section = "downloads")}>
           <AppIcon name="downloads" size={16} />下载设置
+        </button>
+        <button class:active={section === "network"} type="button" onclick={() => (section = "network")}>
+          <AppIcon name="settings" size={16} />网络代理
         </button>
         <button class:active={section === "appearance"} type="button" onclick={() => (section = "appearance")}>
           <AppIcon name="settings" size={16} />外观
@@ -152,6 +171,54 @@
               <label class="check">
                 <input type="checkbox" bind:checked={tray} />
                 <span><strong>最小化到托盘</strong><small>关闭主窗口后继续运行下载任务</small></span>
+              </label>
+            </div>
+            {#if error}<p class="error">{error}</p>{/if}
+            <div class="actions">
+              <button type="button" class="ghost" disabled={saving} onclick={onclose}>取消</button>
+              <button type="submit" class="primary" disabled={saving}>
+                {saving ? "正在保存…" : "保存设置"}
+              </button>
+            </div>
+          </form>
+        {:else if section === "network"}
+          <form onsubmit={save}>
+            <div class="section-title">
+              <strong>代理服务器</strong>
+              <span>通过代理访问需要 VPN 的链接，支持 http://、https:// 与 socks5://。仅对保存后新建的下载与解析生效。</span>
+            </div>
+            <label class="check proxy-toggle">
+              <input type="checkbox" bind:checked={proxyEnabled} />
+              <span><strong>启用代理</strong><small>开启后所有请求经由代理地址转发</small></span>
+            </label>
+            <div class="proxy-fields" class:disabled={!proxyEnabled}>
+              <label>代理地址
+                <input
+                  type="text"
+                  bind:value={proxyUrl}
+                  placeholder="http://127.0.0.1:7890"
+                  disabled={!proxyEnabled}
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
+              <label>用户名
+                <input
+                  type="text"
+                  bind:value={proxyUsername}
+                  placeholder="可选"
+                  disabled={!proxyEnabled}
+                  autocomplete="off"
+                />
+              </label>
+              <label>密码
+                <input
+                  type="password"
+                  bind:value={proxyPassword}
+                  placeholder="可选"
+                  disabled={!proxyEnabled}
+                  autocomplete="new-password"
+                />
               </label>
             </div>
             {#if error}<p class="error">{error}</p>{/if}
@@ -226,6 +293,13 @@
   .section-title { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
   .section-title strong { color: var(--text); font-size: 13px; }
   .section-title span { color: var(--muted); font-size: 10px; }
+  .proxy-toggle { display: flex; align-items: center; gap: 9px; padding: 10px 11px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-deep); }
+  .proxy-toggle span { display: flex; flex-direction: column; gap: 3px; }
+  .proxy-toggle strong { color: var(--text); font-size: 10px; font-weight: 600; }
+  .proxy-toggle small { color: var(--muted); font-size: 9px; }
+  .proxy-fields { display: grid; grid-template-columns: 1fr; gap: 12px; transition: opacity 0.15s ease; }
+  .proxy-fields.disabled { opacity: 0.5; }
+  .proxy-fields label { display: flex; flex-direction: column; gap: 4px; }
   .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .theme-option { position: relative; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-deep); cursor: pointer; }
   .theme-option.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-muted); }
