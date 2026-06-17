@@ -138,11 +138,7 @@
         {#each post.media as item, index}
           <article class="media-card">
             <div class="thumb">
-              {#if item.thumb_url}
-                <img src={item.thumb_url} alt={kindLabel[item.kind] ?? item.kind} loading="lazy" />
-              {:else}
-                <div class="thumb-fallback"><AppIcon name="media" size={22} /></div>
-              {/if}
+              <div class="thumb-fallback"><AppIcon name="media" size={22} /></div>
               <span class="kind-badge">{kindLabel[item.kind] ?? item.kind}</span>
               {#if item.duration_secs}
                 <span class="duration">{formatDuration(item.duration_secs)}</span>
@@ -303,7 +299,6 @@
     background: var(--panel-deep);
   }
   .thumb { position: relative; aspect-ratio: 16 / 10; background: linear-gradient(145deg, #202a48, #101522); }
-  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .thumb-fallback { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted); }
   .kind-badge {
     position: absolute;
