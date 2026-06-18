@@ -89,8 +89,8 @@
   <section class="section-block">
     <div class="section-heading">
       <div>
-        <span class="section-kicker">解析结果</span>
-        <h3>媒体选择器</h3>
+        <strong>解析结果</strong>
+        <span>媒体选择器</span>
       </div>
       {#if post && post.media.length}
         <button class="primary small" onclick={downloadAll}>
@@ -199,14 +199,19 @@
   .prototype-note.message-success { border-color: var(--success-muted); background: var(--success-muted); color: var(--success-soft); }
   .note-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .section-block {
-    padding: 20px;
+    overflow: hidden;
+    padding: 0;
     border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
+    border-radius: 12px;
     background: var(--panel);
   }
-  .section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .section-kicker { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
-  h3 { margin: 3px 0 0; font-size: 16px; }
+  .section-block > *:not(.section-heading) { padding: 0 20px; }
+  .section-block > *:first-child:not(.section-heading) { padding-top: 16px; }
+  .section-block > *:last-child:not(.section-heading) { padding-bottom: 20px; }
+  .section-heading { display: flex; min-height: 55px; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  .section-heading > div:first-child { display: flex; align-items: baseline; gap: 8px; }
+  .section-heading strong { font-size: 12px; }
+  .section-heading span { color: var(--muted); font-size: 9px; }
   .primary.small { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 7px 13px; font-size: 12px; }
   .post-title { margin: 0 0 8px; font-size: 15px; }
   .post-text { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
