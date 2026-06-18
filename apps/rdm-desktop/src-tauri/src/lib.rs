@@ -27,6 +27,9 @@ use rdm_storage::DownloadDatabase;
 struct AppState {
     manager: DownloadManager,
     settings_store: SettingsStore,
+    /// URL supplied to the first process on launch. The frontend takes it
+    /// after its event listeners are registered, avoiding a startup race.
+    launch_url: Mutex<Option<String>>,
     /// Resolves social-media / web post URLs into downloadable media items.
     /// Held behind a mutex so it can be rebuilt when the proxy setting changes
     /// without restarting the app.
@@ -77,6 +80,11 @@ fn list_tasks(state: State<'_, AppState>) -> Vec<DownloadTask> {
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> AppSettings {
     state.manager.settings()
+}
+
+#[tauri::command]
+fn take_launch_url(state: State<'_, AppState>) -> Option<String> {
+    state.launch_url.lock().unwrap().take()
 }
 
 #[tauri::command]
@@ -277,6 +285,7 @@ pub fn run() {
             let database = Arc::new(DownloadDatabase::open(None)?);
             let settings_store = SettingsStore::new(None);
             let settings = settings_store.load();
+            let launch_url = first_http_url(&std::env::args().collect::<Vec<_>>());
 
             // DownloadManager spawns its scheduler with tokio::spawn, so it must
             // be constructed inside a runtime context; Tauri's async runtime is
@@ -295,6 +304,7 @@ pub fn run() {
             app.manage(AppState {
                 manager,
                 settings_store,
+                launch_url: Mutex::new(launch_url),
                 resolvers: Mutex::new(resolvers),
                 force_quit: AtomicBool::new(false),
             });
@@ -305,11 +315,6 @@ pub fn run() {
             );
 
             build_tray(app.handle())?;
-
-            // Open the add dialog if launched with a URL argument.
-            if let Some(url) = first_http_url(&std::env::args().collect::<Vec<_>>()) {
-                let _ = app.handle().emit("rdm://open-url", url);
-            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -330,6 +335,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_tasks,
             get_settings,
+            take_launch_url,
             add_download,
             start_task,
             pause_task,

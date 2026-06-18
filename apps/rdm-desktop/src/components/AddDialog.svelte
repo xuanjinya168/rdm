@@ -1,7 +1,7 @@
 <script>
   import { onMount, untrack } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { isHttpUrl, isValidWindowsFilename, normalizeSha256 } from "../lib/validate.js";
+  import { validateDownloadForm } from "../lib/forms.js";
 
   let { settings, initialUrl = "", onsubmit, onclose } = $props();
 
@@ -26,33 +26,14 @@
   async function submit(event) {
     event.preventDefault();
     error = "";
-    const trimmedUrl = url.trim();
-    if (!isHttpUrl(trimmedUrl)) {
-      error = "请输入有效的 HTTP 或 HTTPS 地址。";
-      return;
-    }
-    if (!destination.trim()) {
-      error = "请选择保存目录。";
-      return;
-    }
-    if (filename.trim() && !isValidWindowsFilename(filename.trim())) {
-      error = "文件名不符合 Windows 命名规则。";
-      return;
-    }
-    const checksum = normalizeSha256(sha256);
-    if (checksum.error) {
-      error = checksum.error;
+    const result = validateDownloadForm({ url, destination, filename, connections, sha256 });
+    if (result.error) {
+      error = result.error;
       return;
     }
     submitting = true;
     try {
-      await onsubmit({
-        url: trimmedUrl,
-        destination: destination.trim(),
-        connections: Number(connections),
-        filename: filename.trim(),
-        sha256: checksum.value ?? "",
-      });
+      await onsubmit(result.value);
     } catch (submitError) {
       error = String(submitError);
     } finally {

@@ -1,6 +1,6 @@
 name: Release
 
-# 推送形如 v0.1.0 的 tag 时,自动在云端构建 Windows 安装包并发布 Release。
+# 推送形如 v0.2.0 的 tag 时,自动在云端构建 Windows 安装包并发布 Release。
 on:
   push:
     tags:
@@ -31,6 +31,20 @@ jobs:
         working-directory: apps/rdm-desktop
         run: npm ci
 
+      - name: Verify version declarations
+        working-directory: apps/rdm-desktop
+        run: npm run version:check
+
+      - name: Verify desktop application
+        working-directory: apps/rdm-desktop
+        run: |
+          npm run tools:check
+          npm run check
+          npm test
+          npm run app:bundle
+          npm run smoke:exe
+          npm run smoke:bundle
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -41,3 +55,24 @@ jobs:
           releaseBody: "RDM ${{ github.ref_name }} 的 Windows 安装包(MSI / NSIS)。"
           releaseDraft: false
           prerelease: false
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $bundle = "apps/rdm-desktop/src-tauri/target/release/bundle"
+          $artifacts = Get-ChildItem -Path $bundle -Recurse -File |
+            Where-Object { $_.Extension -in ".msi", ".exe" } |
+            Sort-Object FullName
+          if (-not $artifacts) {
+            throw "No MSI or NSIS artifacts found under $bundle"
+          }
+          $lines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
+            "$hash  $($artifact.Name)"
+          }
+          $lines | Set-Content -LiteralPath SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" SHA256SUMS.txt --clobber

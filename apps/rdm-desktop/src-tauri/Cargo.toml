@@ -3,7 +3,7 @@
 # there free of the heavy Tauri/WebView toolchain.
 [package]
 name = "rdm-desktop"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "RDM desktop application"
 

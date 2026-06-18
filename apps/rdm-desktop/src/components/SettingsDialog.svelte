@@ -2,7 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import AppIcon from "./AppIcon.svelte";
-  import BrowserIntegrationSettings from "./BrowserIntegrationSettings.svelte";
+  import { validateSettingsForm } from "../lib/forms.js";
 
   let { settings, onsave, onclose } = $props();
 
@@ -45,34 +45,27 @@
   async function save(event) {
     event.preventDefault();
     error = "";
-    if (!downloadDir.trim()) {
-      error = "请选择默认下载目录。";
-      return;
-    }
-    if (proxyEnabled && !proxyUrl.trim()) {
-      error = "已启用代理，请填写代理地址。";
-      return;
-    }
-    if (proxyUrl.trim() && !/^https?:\/\//i.test(proxyUrl.trim()) && !/^socks5h?:\/\//i.test(proxyUrl.trim())) {
-      error = "代理地址需以 http://、https:// 或 socks5:// 开头。";
+    const result = validateSettingsForm({
+      downloadDir,
+      maxActive,
+      connections,
+      retry,
+      speedKb,
+      clipboard,
+      tray,
+      theme,
+      proxyEnabled,
+      proxyUrl,
+      proxyUsername,
+      proxyPassword,
+    });
+    if (result.error) {
+      error = result.error;
       return;
     }
     saving = true;
     try {
-      await onsave({
-        download_dir: downloadDir.trim(),
-        max_active_downloads: Number(maxActive),
-        default_connections: Number(connections),
-        retry_count: Number(retry),
-        speed_limit_bytes: Number(speedKb) * 1024,
-        clipboard_monitoring: clipboard,
-        minimize_to_tray: tray,
-        theme,
-        proxy_enabled: proxyEnabled,
-        proxy_url: proxyUrl.trim(),
-        proxy_username: proxyUsername.trim(),
-        proxy_password: proxyPassword,
-      });
+      await onsave(result.value);
     } catch (saveError) {
       error = String(saveError);
     } finally {
@@ -102,7 +95,7 @@
     <div class="settings-heading">
       <div>
         <h2 id="settings-title">设置</h2>
-        <p class="sub">管理下载参数和浏览器集成。</p>
+        <p class="sub">管理下载、网络和界面参数。</p>
       </div>
       <button class="close-button" type="button" aria-label="关闭设置" disabled={saving} onclick={onclose}>×</button>
     </div>
@@ -117,10 +110,6 @@
         </button>
         <button class:active={section === "appearance"} type="button" onclick={() => (section = "appearance")}>
           <AppIcon name="settings" size={16} />外观
-        </button>
-        <button class:active={section === "browser"} type="button" onclick={() => (section = "browser")}>
-          <AppIcon name="browser" size={16} />浏览器集成
-          <small>规划中</small>
         </button>
       </nav>
 
@@ -259,11 +248,6 @@
               </button>
             </div>
           </form>
-        {:else}
-          <BrowserIntegrationSettings />
-          <div class="actions browser-actions">
-            <button type="button" class="primary" onclick={onclose}>完成</button>
-          </div>
         {/if}
       </div>
     </div>
@@ -280,7 +264,6 @@
   .settings-nav button { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 7px; width: 100%; border-color: transparent; background: transparent; color: var(--muted); text-align: left; }
   .settings-nav button:hover { border-color: transparent; }
   .settings-nav button.active { background: var(--accent-muted); color: var(--text); }
-  .settings-nav small { color: var(--accent-soft); font-size: 7px; }
   .settings-content { min-width: 0; max-height: min(560px, calc(100vh - 130px)); overflow: auto; padding: 17px; }
   .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .behavior-group { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-deep); }
@@ -289,7 +272,6 @@
   .behavior-group .check span { display: flex; flex-direction: column; gap: 3px; }
   .behavior-group .check strong { color: var(--text); font-size: 10px; font-weight: 600; }
   .behavior-group .check small { color: var(--muted); font-size: 9px; }
-  .browser-actions { margin-top: 13px; }
   .section-title { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
   .section-title strong { color: var(--text); font-size: 13px; }
   .section-title span { color: var(--muted); font-size: 10px; }

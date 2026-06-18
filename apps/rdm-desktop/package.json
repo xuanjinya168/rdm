@@ -1,6 +1,6 @@
 {
   "name": "rdm-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,12 @@
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "tauri build --no-bundle",
-    "app:bundle": "tauri build"
+    "app:bundle": "tauri build",
+    "smoke:server": "node ../../tools/smoke-server.mjs",
+    "smoke:exe": "node ../../tools/exe-smoke.mjs",
+    "smoke:bundle": "node ../../tools/bundle-smoke.mjs",
+    "tools:check": "node --check ../../tools/check-version.mjs && node --check ../../tools/smoke-server.mjs && node --check ../../tools/exe-smoke.mjs && node --check ../../tools/bundle-smoke.mjs",
+    "version:check": "node ../../tools/check-version.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

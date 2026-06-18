@@ -15,6 +15,7 @@ RDM 是一个 Windows HTTP/HTTPS 多连接分段下载管理器,使用 **Rust** 
 - 剪贴板 URL 识别、系统托盘、下载完成通知、单实例 URL 接管
 - `.part` 临时文件、文件大小校验及原子重命名
 - 可注册下载 Provider,为认证 / 签名链接预留扩展点
+- X / Twitter、Instagram、Threads 帖子媒体解析
 
 ## 项目结构
 
@@ -57,9 +58,11 @@ npm run app:build    # 生成自包含 EXE: src-tauri/target/release/rdm-desktop
 
 详见 [`apps/rdm-desktop/README.md`](apps/rdm-desktop/README.md)。
 
+发布前还需按 [`SMOKE_TEST.md`](SMOKE_TEST.md) 在真实 Windows 桌面完成运行期验收。
+
 ## 数据目录
 
 配置、SQLite 数据库默认保存在 `%LOCALAPPDATA%\RDM`。数据库与旧版 PyDM 兼容
 (沿用 `PRAGMA user_version` 迁移)。
 
-首版不含浏览器扩展、视频嗅探、BT、FTP 或 DRM 下载。
+当前版本不含浏览器扩展、网页嗅探、BT、FTP 或 DRM 下载。

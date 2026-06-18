@@ -24,8 +24,12 @@ cargo test
 
 ```powershell
 cd apps/rdm-desktop
+npm run check
+npm test
 npm run build
 ```
+
+准备发布时还需执行根目录的 [`SMOKE_TEST.md`](SMOKE_TEST.md)。
 
 ## 设计约束
 

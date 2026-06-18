@@ -1,5 +1,6 @@
 <script>
   import { onMount } from "svelte";
+  import packageInfo from "../package.json";
   import { readText } from "@tauri-apps/plugin-clipboard-manager";
   import {
     isPermissionGranted,
@@ -10,10 +11,10 @@
   import SettingsDialog from "./components/SettingsDialog.svelte";
   import AppIcon from "./components/AppIcon.svelte";
   import MediaResolverPage from "./components/MediaResolverPage.svelte";
-  import SnifferPage from "./components/SnifferPage.svelte";
   import {
     listTasks,
     getSettings,
+    takeLaunchUrl,
     saveSettings,
     addDownload,
     startTask,
@@ -34,7 +35,13 @@
     ACTIVE_STATUSES,
     ACTIVE_FILTER_STATUSES,
   } from "./lib/format.js";
-  import { mergeTaskSnapshots } from "./lib/tasks.js";
+  import {
+    canDeleteTask,
+    canPauseTask,
+    canStartTask,
+    matchesTaskFilter,
+    mergeTaskSnapshots,
+  } from "./lib/tasks.js";
   import { isHttpUrl } from "./lib/validate.js";
 
   let tasks = $state([]);
@@ -59,7 +66,6 @@
   const navigation = [
     { id: "downloads", label: "下载中心", icon: "downloads" },
     { id: "media", label: "媒体解析", icon: "media" },
-    { id: "sniffer", label: "网页嗅探", icon: "sniff" },
   ];
   const pageMeta = {
     downloads: {
@@ -70,15 +76,11 @@
       title: "媒体解析",
       description: "从社交媒体和网页中提取视频、音频与字幕",
     },
-    sniffer: {
-      title: "网页嗅探",
-      description: "查看浏览器页面中实时发现的媒体资源",
-    },
   };
   const currentPage = $derived(pageMeta[page]);
 
   const sorted = $derived([...tasks].sort((a, b) => b.created_at - a.created_at));
-  const visible = $derived(sorted.filter(matchesFilter));
+  const visible = $derived(sorted.filter((task) => matchesTaskFilter(task, filter)));
   const stats = $derived({
     total: tasks.length,
     active: tasks.filter((t) => ACTIVE_STATUSES.has(t.status)).length,
@@ -96,13 +98,6 @@
   $effect(() => {
     if (deleteTarget) queueMicrotask(() => deleteCancel?.focus());
   });
-
-  function matchesFilter(task) {
-    if (filter === "all") return true;
-    if (filter === "active") return ACTIVE_STATUSES.has(task.status);
-    if (filter === "completed") return task.status === "completed";
-    return ["paused", "failed", "canceled"].includes(task.status);
-  }
 
   function upsert(task) {
     const i = tasks.findIndex((t) => t.id === task.id);
@@ -156,7 +151,11 @@
         await register(onOpenUrl((url) => openAdd(url)));
         await register(onNewDownload(() => openAdd("")));
 
-        const [initialTasks, loadedSettings] = await Promise.all([listTasks(), getSettings()]);
+        const [initialTasks, loadedSettings, launchUrl] = await Promise.all([
+          listTasks(),
+          getSettings(),
+          takeLaunchUrl(),
+        ]);
         if (!mounted) return;
 
         for (const { task, speed } of bufferedUpdates.values()) {
@@ -165,6 +164,7 @@
         tasks = mergeTaskSnapshots(initialTasks, bufferedUpdates.values());
         settings = loadedSettings;
         initialTasksLoaded = true;
+        if (launchUrl) openAdd(launchUrl);
 
         notifyOk =
           (await isPermissionGranted()) || (await requestPermission()) === "granted";
@@ -316,7 +316,7 @@
       <AppIcon name="settings" size={17} />
       <span>设置</span>
     </button>
-    <div class="version">RDM 0.1.0</div>
+    <div class="version">RDM {packageInfo.version}</div>
   </aside>
 
   <section class="workspace">
@@ -379,10 +379,10 @@
               <span>{visible.length} 个项目</span>
             </div>
             <div class="panel-heading-actions">
-              <button disabled={!selected || ACTIVE_STATUSES.has(selected?.status) || selected?.status === "completed"} onclick={() => selected && startTask(selected.id)}>开始</button>
-              <button disabled={!selected || !ACTIVE_FILTER_STATUSES.has(selected?.status)} onclick={() => selected && pauseTask(selected.id)}>暂停</button>
+              <button disabled={!canStartTask(selected)} onclick={() => selected && startTask(selected.id)}>开始</button>
+              <button disabled={!canPauseTask(selected)} onclick={() => selected && pauseTask(selected.id)}>暂停</button>
               <button disabled={!selected} onclick={() => selected && openFolder(selected.destination)}><AppIcon name="folder" size={14} />目录</button>
-              <button class="danger" disabled={!selected || ACTIVE_STATUSES.has(selected?.status)} onclick={() => selected && requestDelete(selected)}>删除</button>
+              <button class="danger" disabled={!canDeleteTask(selected)} onclick={() => selected && requestDelete(selected)}>删除</button>
             </div>
           </div>
           <div class="toolbar">
@@ -419,7 +419,7 @@
                     <td colspan="6" class="empty">
                       <span class="empty-icon"><AppIcon name="downloads" size={24} /></span>
                       <strong>还没有下载任务</strong>
-                      <small>添加直接链接，或从媒体解析和网页嗅探中创建任务</small>
+                      <small>添加直接链接，或从媒体解析结果中创建任务</small>
                       <button class="primary" onclick={() => openAdd("")}>新建下载</button>
                     </td>
                   </tr>
@@ -430,8 +430,6 @@
         </section>
       {:else if page === "media"}
         <MediaResolverPage onDownload={downloadMedia} downloadDir={settings?.download_dir} />
-      {:else if page === "sniffer"}
-        <SnifferPage />
       {/if}
     </div>
   </section>
@@ -449,7 +447,9 @@
       <button onclick={() => cancelTask(menu.task.id)}>取消</button>
     {/if}
     <button onclick={() => openFolder(menu.task.destination)}>打开所在目录</button>
-    <button class="danger" onclick={() => requestDelete(menu.task)}>删除任务</button>
+    {#if canDeleteTask(menu.task)}
+      <button class="danger" onclick={() => requestDelete(menu.task)}>删除任务</button>
+    {/if}
   </div>
 {/if}
 

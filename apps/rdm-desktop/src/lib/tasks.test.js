@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeTaskSnapshots } from "./tasks.js";
+import {
+  canDeleteTask,
+  canPauseTask,
+  canStartTask,
+  matchesTaskFilter,
+  mergeTaskSnapshots,
+} from "./tasks.js";
 
 test("buffered updates replace older initial snapshots", () => {
   const initial = [{ id: "a", status: "downloading", updated_at: 10 }];
@@ -23,4 +29,20 @@ test("older buffered updates cannot overwrite newer initial snapshots", () => {
     { id: "a", status: "completed", updated_at: 12 },
     { id: "b", status: "queued", updated_at: 11 },
   ]);
+});
+
+test("task filters classify active, completed, and other states", () => {
+  assert.equal(matchesTaskFilter({ status: "downloading" }, "active"), true);
+  assert.equal(matchesTaskFilter({ status: "completed" }, "completed"), true);
+  assert.equal(matchesTaskFilter({ status: "paused" }, "other"), true);
+  assert.equal(matchesTaskFilter({ status: "queued" }, "other"), false);
+});
+
+test("task actions follow the download lifecycle", () => {
+  assert.equal(canStartTask({ status: "paused" }), true);
+  assert.equal(canStartTask({ status: "completed" }), false);
+  assert.equal(canPauseTask({ status: "downloading" }), true);
+  assert.equal(canPauseTask({ status: "queued" }), false);
+  assert.equal(canDeleteTask({ status: "failed" }), true);
+  assert.equal(canDeleteTask({ status: "downloading" }), false);
 });

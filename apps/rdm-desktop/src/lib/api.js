@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 
 export const listTasks = () => invoke("list_tasks");
 export const getSettings = () => invoke("get_settings");
+export const takeLaunchUrl = () => invoke("take_launch_url");
 export const saveSettings = (settings) => invoke("save_settings", { settings });
 
 export const addDownload = ({ url, destination, connections, filename, sha256 }) =>

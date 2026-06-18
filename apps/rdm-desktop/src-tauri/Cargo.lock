@@ -3251,7 +3251,7 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "rdm-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "log",
  "rdm-domain",
@@ -3273,7 +3273,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-domain"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "directories",
  "serde",
@@ -3286,7 +3286,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -3304,7 +3304,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-http"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "log",
  "percent-encoding",
@@ -3316,7 +3316,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-resolver"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "log",
@@ -3329,7 +3329,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-service"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rdm-domain",
  "rdm-engine",
@@ -3342,7 +3342,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rdm-domain",
  "rusqlite",
