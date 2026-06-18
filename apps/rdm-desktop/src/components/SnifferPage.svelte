@@ -86,12 +86,12 @@
     justify-content: space-between;
     gap: 20px;
     padding: 17px 19px;
-    border: 1px solid rgba(226, 166, 73, 0.28);
+    border: 1px solid var(--warning-muted);
     border-radius: var(--radius-lg);
-    background: linear-gradient(90deg, rgba(121, 80, 24, 0.18), var(--panel));
+    background: linear-gradient(90deg, var(--warning-muted), var(--panel));
   }
   .connection-copy { display: flex; align-items: flex-start; gap: 12px; }
-  .status-light { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #d89c45; box-shadow: 0 0 0 5px rgba(216, 156, 69, 0.1); }
+  .status-light { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 5px var(--warning-muted); }
   .connection-copy strong { display: block; font-size: 13px; }
   .connection-copy p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
   .sniffer-workspace {
@@ -128,7 +128,7 @@
   .resource-empty strong { margin-top: 15px; font-size: 13px; }
   .resource-empty p { max-width: 360px; margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
   .radar { position: relative; display: grid; width: 74px; height: 74px; place-items: center; }
-  .radar-ring { position: absolute; border: 1px solid rgba(103, 128, 255, 0.22); border-radius: 50%; }
+  .radar-ring { position: absolute; border: 1px solid var(--accent-muted); border-radius: 50%; }
   .radar-ring.one { inset: 10px; }
   .radar-ring.two { inset: 0; }
   .radar-core { display: grid; width: 37px; height: 37px; place-items: center; border-radius: 50%; background: var(--accent-muted); color: var(--accent-soft); }

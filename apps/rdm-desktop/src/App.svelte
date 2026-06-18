@@ -58,7 +58,7 @@
 
   const navigation = [
     { id: "downloads", label: "下载中心", icon: "downloads" },
-    { id: "media", label: "媒体解析", icon: "media", badge: "新" },
+    { id: "media", label: "媒体解析", icon: "media" },
     { id: "sniffer", label: "网页嗅探", icon: "sniff" },
   ];
   const pageMeta = {

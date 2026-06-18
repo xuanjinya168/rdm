@@ -77,7 +77,7 @@
     border: 1px solid var(--line);
     border-radius: 10px;
     background:
-      radial-gradient(circle at 100% 0%, rgba(91, 116, 255, 0.16), transparent 36%),
+      radial-gradient(circle at 100% 0%, var(--accent-muted), transparent 36%),
       var(--panel-deep);
   }
   .intro-icon, .status-icon {
@@ -110,11 +110,11 @@
     background: var(--panel-deep);
   }
   .status-icon { width: 30px; height: 30px; }
-  .status-icon.warning { background: rgba(210, 153, 71, 0.12); color: #d9a65f; }
+  .status-icon.warning { background: var(--warning-muted); color: var(--warning-soft); }
   .connection-grid span { color: var(--muted); font-size: 9px; }
   .connection-grid strong { font-size: 10px; }
   .connection-grid small { padding: 3px 6px; border-radius: 999px; background: var(--panel-raised); color: var(--muted); font-size: 8px; }
-  .connection-grid small.warning { background: rgba(210, 153, 71, 0.12); color: #d9a65f; }
+  .connection-grid small.warning { background: var(--warning-muted); color: var(--warning-soft); }
   .setting-group { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-deep); }
   .group-heading, .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 11px 13px; }
   .group-heading { border-bottom: 1px solid var(--line); }
@@ -125,9 +125,9 @@
   .setting-row { color: var(--text); }
   .setting-row + .setting-row { border-top: 1px solid var(--line); }
   .setting-row input { width: auto; accent-color: var(--accent); }
-  .boundary-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 11px; border: 1px solid rgba(61, 174, 115, 0.2); border-radius: 9px; background: rgba(61, 174, 115, 0.07); color: #69ca94; }
+  .boundary-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 11px; border: 1px solid var(--success-muted); border-radius: 9px; background: var(--success-muted); color: var(--success-soft); }
   .boundary-note p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
-  .boundary-note strong { color: #8ed8ae; }
+  .boundary-note strong { color: var(--success); }
   @media (max-width: 640px) {
     .connection-grid { grid-template-columns: 1fr; }
   }

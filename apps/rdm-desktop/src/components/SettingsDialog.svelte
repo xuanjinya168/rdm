@@ -312,12 +312,12 @@
   .theme-preview b, .theme-preview em { position: absolute; left: 32%; right: 8%; border-radius: 4px; }
   .theme-preview b { height: 18px; top: 14px; }
   .theme-preview em { height: 38px; top: 40px; }
-  .light-preview { background: #f5f7fb; }
-  .light-preview i { background: #ffffff; border-right: 1px solid #dfe3ec; }
-  .light-preview b, .light-preview em { background: #ffffff; border: 1px solid #dfe3ec; }
-  .dark-preview { background: #0e1016; }
-  .dark-preview i { background: #10131b; border-right: 1px solid #292e3b; }
-  .dark-preview b, .dark-preview em { background: #171a23; border: 1px solid #292e3b; }
+  .light-preview { background: var(--bg); }
+  .light-preview i { background: var(--sidebar); border-right: 1px solid var(--sidebar-line); }
+  .light-preview b, .light-preview em { background: var(--panel); border: 1px solid var(--line); }
+  .dark-preview { background: var(--bg); }
+  .dark-preview i { background: var(--sidebar); border-right: 1px solid var(--sidebar-line); }
+  .dark-preview b, .dark-preview em { background: var(--panel); border: 1px solid var(--line); }
   .appearance-actions { margin-top: 18px !important; }
   @media (max-width: 720px) {
     .settings-layout { grid-template-columns: 1fr; }

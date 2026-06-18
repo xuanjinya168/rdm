@@ -176,7 +176,7 @@
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background:
-      radial-gradient(circle at 90% 0%, rgba(83, 111, 255, 0.22), transparent 34%),
+      radial-gradient(circle at 90% 0%, var(--accent-muted), transparent 34%),
       linear-gradient(135deg, var(--panel), var(--panel-deep));
   }
   .resolver-hero::after {
@@ -185,7 +185,7 @@
     height: 230px;
     right: -90px;
     bottom: -150px;
-    border: 1px solid rgba(121, 143, 255, 0.18);
+    border: 1px solid var(--accent-muted);
     border-radius: 50%;
     content: "";
   }
@@ -216,12 +216,12 @@
     gap: 10px;
     min-width: 0;
     padding: 0 13px;
-    border: 1px solid #343a4d;
+    border: 1px solid var(--line);
     border-radius: 10px;
     background: color-mix(in srgb, var(--panel-deep) 88%, transparent);
     color: var(--muted);
   }
-  .input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91, 116, 255, 0.12); }
+  .input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-shadow); }
   .input-wrap input {
     flex: 1;
     min-width: 0;
@@ -236,13 +236,13 @@
   .source-list { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
   .source-list span {
     padding: 4px 9px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--line);
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.035);
+    background: var(--panel-raised);
     color: var(--muted);
     font-size: 11px;
   }
-  .source-list .supported { border-color: rgba(84, 132, 255, 0.4); background: var(--accent-muted); color: var(--accent-soft); }
+  .source-list .supported { border-color: var(--accent-muted); background: var(--accent-muted); color: var(--accent-soft); }
   .prototype-note {
     position: relative;
     z-index: 1;
@@ -252,14 +252,14 @@
     max-width: 760px;
     margin-top: 14px;
     padding: 9px 11px;
-    border: 1px solid rgba(84, 132, 255, 0.26);
+    border: 1px solid var(--info-muted);
     border-radius: 8px;
-    background: rgba(55, 88, 170, 0.14);
-    color: #c8d6ff;
+    background: var(--info-muted);
+    color: var(--info-soft);
     font-size: 12px;
   }
-  .prototype-note.message-error { border-color: rgba(224, 85, 106, 0.35); background: rgba(140, 50, 70, 0.17); color: #ffc2cc; }
-  .prototype-note.message-success { border-color: rgba(76, 175, 120, 0.35); background: rgba(45, 110, 75, 0.17); color: #b9f0cd; }
+  .prototype-note.message-error { border-color: var(--danger-muted); background: var(--danger-muted); color: var(--danger-soft); }
+  .prototype-note.message-success { border-color: var(--success-muted); background: var(--success-muted); color: var(--success-soft); }
   .note-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .section-block {
     padding: 20px;
@@ -300,7 +300,7 @@
     font-weight: 600;
   }
   .download-btn:disabled { opacity: 0.75; }
-  .download-btn.done { border-color: rgba(76, 175, 120, 0.5); background: rgba(45, 110, 75, 0.2); color: #b9f0cd; }
+  .download-btn.done { border-color: var(--success-muted); background: var(--success-muted); color: var(--success-soft); }
   .save-hint { margin: 14px 0 0; color: var(--muted); font-size: 11px; }
   .result-placeholder {
     position: relative;
