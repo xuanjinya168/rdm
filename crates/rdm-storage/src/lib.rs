@@ -1,10 +1,8 @@
 //! SQLite persistence layer for RDM.
 //!
-//! Ports the Python `database` and `migrations` modules: a single connection
-//! serialized behind a mutex (download workers checkpoint frequently, so the
-//! per-operation connect + PRAGMA cost dominated), WAL journaling, and a
-//! `PRAGMA user_version` migration scheme kept byte-compatible with existing
-//! PyDM databases.
+//! A single connection serialized behind a mutex (download workers checkpoint
+//! frequently, so the per-operation connect + PRAGMA cost would dominate),
+//! WAL journaling, and a `PRAGMA user_version` migration scheme.
 
 pub mod database;
 pub mod error;

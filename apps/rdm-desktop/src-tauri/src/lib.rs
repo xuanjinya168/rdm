@@ -271,10 +271,9 @@ pub fn run() {
     }
 
     builder
-        // Rotating log file in the app log dir (ports PyDM's configure_logging):
-        // when `rdm.log` exceeds the size cap it is rotated and only the most
-        // recent backup is kept, so disk use stays bounded. Also mirrors to
-        // stdout for `app:dev`.
+        // Rotating log file in the app log dir: when `rdm.log` exceeds the
+        // size cap it is rotated and only the most recent backup is kept,
+        // so disk use stays bounded. Also mirrors to stdout for `app:dev`.
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([

@@ -1,8 +1,7 @@
 # RDM
 
 RDM 是一个 Windows HTTP/HTTPS 多连接分段下载管理器,使用 **Rust** 编写,
-桌面界面基于 **Tauri 2 + Svelte 5**。它是早期 Python/PySide6 版本(PyDM)的
-完整重写。
+桌面界面基于 **Tauri 2 + Svelte 5**。
 
 ## 功能
 
@@ -62,7 +61,7 @@ npm run app:build    # 生成自包含 EXE: src-tauri/target/release/rdm-desktop
 
 ## 数据目录
 
-配置、SQLite 数据库默认保存在 `%LOCALAPPDATA%\RDM`。数据库与旧版 PyDM 兼容
-(沿用 `PRAGMA user_version` 迁移)。
+配置、SQLite 数据库默认保存在 `%LOCALAPPDATA%\RDM`,迁移通过 SQLite
+`PRAGMA user_version` 管理。
 
 当前版本不含浏览器扩展、网页嗅探、BT、FTP 或 DRM 下载。

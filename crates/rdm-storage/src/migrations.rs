@@ -1,6 +1,6 @@
-//! Schema migrations driven by `PRAGMA user_version`. Port of the Python
-//! `migrations` module — same ordered steps, so a database written by either
-//! implementation upgrades identically.
+//! Schema migrations driven by `PRAGMA user_version`. Each migration bumps
+//! the stored version, and `apply_migrations` only runs steps newer than the
+//! database's current version, so existing databases upgrade in place.
 
 use rusqlite::Connection;
 
