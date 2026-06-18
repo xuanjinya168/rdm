@@ -304,21 +304,14 @@
   <section class="workspace">
     <div class="page-content">
       {#if page === "downloads"}
-        <section class="quick-card">
-          <div class="quick-heading">
-            <span class="quick-icon"><AppIcon name="link" size={18} /></span>
-            <div><strong>快速添加</strong><small>直接创建 HTTP / HTTPS 下载任务</small></div>
-          </div>
-          <div class="quick">
-            <input
-              type="url"
-              bind:value={quickUrl}
-              placeholder="粘贴文件地址，按 Enter 添加"
-              onkeydown={(e) => e.key === "Enter" && quickAdd()}
-            />
-            <button class="primary" onclick={quickAdd}>添加任务</button>
-          </div>
-        </section>
+        <form class="quick" onsubmit={(e) => { e.preventDefault(); quickAdd(); }}>
+          <input
+            type="url"
+            bind:value={quickUrl}
+            placeholder="粘贴文件地址，按 Enter 添加"
+          />
+          <button class="primary" type="submit">添加任务</button>
+        </form>
         {#if quickError}<p class="banner">{quickError}</p>{/if}
 
         <section class="panel">

@@ -153,6 +153,7 @@
   .resolver-hero {
     position: relative;
     overflow: hidden;
+    margin-bottom: 12px;
     padding: 13px 15px;
     border: 1px solid var(--line);
     border-radius: 11px;
