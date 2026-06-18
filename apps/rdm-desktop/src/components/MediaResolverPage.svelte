@@ -69,13 +69,7 @@
 <div class="media-page">
   <section class="resolver-hero">
     <form class="resolver-box" onsubmit={resolve}>
-      <div class="input-wrap">
-        <AppIcon name="link" size={18} />
-        <input bind:value={url} aria-label="待解析地址" placeholder="粘贴 Twitter / X、Instagram 或 Threads 帖子地址" />
-        {#if url}
-          <button type="button" class="clear" aria-label="清空地址" onclick={() => (url = "")}>×</button>
-        {/if}
-      </div>
+      <input bind:value={url} aria-label="待解析地址" placeholder="粘贴 Twitter / X、Instagram 或 Threads 帖子地址" />
       <button class="primary resolve-button" type="submit" disabled={loading}>
         {loading ? "解析中…" : "解析"}
       </button>
@@ -181,30 +175,9 @@
     z-index: 1;
     display: flex;
     max-width: 760px;
-    gap: 10px;
+    gap: 7px;
   }
-  .input-wrap {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    padding: 0 13px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--panel-deep) 88%, transparent);
-    color: var(--muted);
-  }
-  .input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-shadow); }
-  .input-wrap input {
-    flex: 1;
-    min-width: 0;
-    padding: 12px 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  .clear { padding: 2px 5px; border: 0; background: transparent; color: var(--muted); font-size: 18px; }
+  .resolver-box input { flex: 1; min-width: 0; }
   .resolve-button { min-width: 105px; }
   .prototype-note {
     position: relative;

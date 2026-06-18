@@ -240,6 +240,7 @@ nav { display: flex; flex-direction: column; gap: 3px; }
 .quick-heading small { color: var(--muted); font-size: 9px; }
 .quick { display: flex; gap: 7px; }
 .quick input { flex: 1; min-width: 0; }
+.quick button { min-width: 105px; }
 .banner { margin: 0 0 12px; padding: 9px 11px; border: 1px solid var(--danger-muted); border-radius: 8px; background: var(--danger-muted); color: var(--danger-soft); font-size: 11px; }
 
 .panel { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
