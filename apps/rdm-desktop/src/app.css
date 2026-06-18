@@ -215,21 +215,6 @@ nav { display: flex; flex-direction: column; gap: 3px; }
   flex-direction: column;
   background: var(--bg);
 }
-.topbar {
-  display: flex;
-  min-height: 76px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 15px 24px;
-  border-bottom: 1px solid var(--topbar-line);
-  background: var(--topbar-bg);
-}
-.topbar h1 { margin: 0; font-size: 18px; font-weight: 680; letter-spacing: -0.015em; }
-.topbar p { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
-.topbar-actions { display: flex; align-items: center; gap: 8px; }
-.new-download { display: flex; align-items: center; gap: 6px; }
-.phase-label { padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; }
 .page-content { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 28px; }
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }

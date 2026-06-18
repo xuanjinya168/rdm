@@ -67,17 +67,6 @@
     { id: "downloads", label: "下载中心", icon: "downloads" },
     { id: "media", label: "媒体解析", icon: "media" },
   ];
-  const pageMeta = {
-    downloads: {
-      title: "下载中心",
-      description: "管理所有来源的下载任务",
-    },
-    media: {
-      title: "媒体解析",
-      description: "从社交媒体和网页中提取视频、音频与字幕",
-    },
-  };
-  const currentPage = $derived(pageMeta[page]);
 
   const sorted = $derived([...tasks].sort((a, b) => b.created_at - a.created_at));
   const visible = $derived(sorted.filter((task) => matchesTaskFilter(task, filter)));
@@ -318,20 +307,6 @@
   </aside>
 
   <section class="workspace">
-    <header class="topbar">
-      <div>
-        <h1>{currentPage.title}</h1>
-        <p>{currentPage.description}</p>
-      </div>
-      <div class="topbar-actions">
-        {#if page === "downloads"}
-          <button class="primary new-download" onclick={() => openAdd("")}>
-            <AppIcon name="plus" size={16} />新建下载
-          </button>
-        {/if}
-      </div>
-    </header>
-
     <div class="page-content">
       {#if page === "downloads"}
         <section class="quick-card">
