@@ -91,11 +91,6 @@ impl ResolverRegistry {
         })
     }
 
-    /// Whether any registered resolver can handle `url`.
-    pub fn can_resolve(&self, url: &str) -> bool {
-        self.resolvers.iter().any(|r| r.can_handle(url))
-    }
-
     /// Resolve `url`, or [`ResolveError::Unsupported`] if no resolver matches.
     pub async fn resolve(&self, url: &str) -> Result<ResolvedPost, ResolveError> {
         let resolver = self

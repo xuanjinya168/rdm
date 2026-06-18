@@ -5,8 +5,8 @@
 //! can hand each file to the download engine.
 //!
 //! Ported from the Python project ParseHub (<https://github.com/z-mio/ParseHub>).
-//! Twitter / X is implemented today; other platforms plug in by adding another
-//! [`MediaResolver`] in [`ResolverRegistry::new`].
+//! Twitter / X, Instagram and Threads are registered by default; additional
+//! platforms plug in by implementing [`MediaResolver`].
 
 pub mod error;
 pub mod instagram;

@@ -135,10 +135,7 @@ fn delete_task(state: State<'_, AppState>, id: String, delete_file: bool) -> Res
 }
 
 #[tauri::command]
-fn save_settings(
-    state: State<'_, AppState>,
-    settings: AppSettings,
-) -> Result<AppSettings, String> {
+fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings, String> {
     // The resolver client is built once and held behind a mutex; rebuild it
     // only when the proxy actually changes, since downloads read settings live.
     let old_proxy = proxy_from_settings(&state.manager.settings());
@@ -166,14 +163,28 @@ async fn resolve_media(state: State<'_, AppState>, url: String) -> Result<Resolv
         .map_err(|error| error.to_string())
 }
 
-/// Open a task's destination folder in the system file manager.
+/// Reveal a task's output file, falling back to its destination directory
+/// while the filename is unknown or the file does not exist yet.
 #[tauri::command]
-fn open_folder(app: AppHandle, path: String) -> Result<(), String> {
+fn reveal_task_file(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    let _ = std::fs::create_dir_all(&path);
-    app.opener()
-        .open_path(path, None::<&str>)
-        .map_err(|error| error.to_string())
+    let task = state
+        .manager
+        .get_task(&id)
+        .ok_or_else(|| "下载任务不存在。".to_string())?;
+    let directory = std::path::PathBuf::from(&task.destination);
+    let output = task.output_path();
+
+    if output.is_file() {
+        app.opener()
+            .reveal_item_in_dir(output)
+            .map_err(|error| error.to_string())
+    } else {
+        std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        app.opener()
+            .open_path(directory.to_string_lossy(), None::<&str>)
+            .map_err(|error| error.to_string())
+    }
 }
 
 /// The first http/https URL among CLI args, mirroring Python `first_http_url`.
@@ -291,7 +302,11 @@ pub fn run() {
             // be constructed inside a runtime context; Tauri's async runtime is
             // tokio, and the spawned scheduler outlives this block.
             let manager = tauri::async_runtime::block_on(async {
-                DownloadManager::new(database, settings.clone(), Arc::new(ProviderRegistry::default()))
+                DownloadManager::new(
+                    database,
+                    settings.clone(),
+                    Arc::new(ProviderRegistry::default()),
+                )
             })?;
 
             let emitter = app.handle().clone();
@@ -343,7 +358,7 @@ pub fn run() {
             delete_task,
             save_settings,
             resolve_media,
-            open_folder,
+            reveal_task_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running RDM desktop");

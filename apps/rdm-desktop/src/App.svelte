@@ -21,7 +21,7 @@
     pauseTask,
     cancelTask,
     deleteTask,
-    openFolder,
+    revealTaskFile,
     onTaskUpdate,
     onOpenUrl,
     onNewDownload,
@@ -48,7 +48,8 @@
   let speeds = $state({});
   let settings = $state(null);
   let filter = $state("all");
-  let selectedId = $state(null);
+  let focusedTaskId = $state(null);
+  let selectedTaskIds = $state(new Set());
   let quickUrl = $state("");
   let quickError = $state("");
   let page = $state("downloads");
@@ -56,9 +57,10 @@
   let addOpen = $state(false);
   let addUrl = $state("");
   let settingsOpen = $state(false);
-  let deleteTarget = $state(null);
+  let deleteTargets = $state([]);
   let deleteCancel = $state();
   let menu = $state(null); // { task, x, y }
+  let headerCheckboxEl = $state();
 
   let notifyOk = false;
   let lastClipboard = "";
@@ -67,23 +69,50 @@
     { id: "downloads", label: "下载中心", icon: "downloads" },
     { id: "media", label: "媒体解析", icon: "media" },
   ];
+  const taskFilters = [
+    { id: "all", label: "全部" },
+    { id: "active", label: "进行中" },
+    { id: "completed", label: "已完成" },
+    { id: "other", label: "其他" },
+  ];
 
   const sorted = $derived([...tasks].sort((a, b) => b.created_at - a.created_at));
   const visible = $derived(sorted.filter((task) => matchesTaskFilter(task, filter)));
   const stats = $derived({
-    total: tasks.length,
+    all: tasks.length,
     active: tasks.filter((t) => ACTIVE_STATUSES.has(t.status)).length,
     completed: tasks.filter((t) => t.status === "completed").length,
     other: tasks.filter((t) => ["paused", "failed", "canceled"].includes(t.status)).length,
   });
-  const selected = $derived(tasks.find((t) => t.id === selectedId) ?? null);
+  const focusedTask = $derived(
+    tasks.find((task) => task.id === focusedTaskId) ?? null,
+  );
+  const selectedTasks = $derived(
+    tasks.filter((task) => selectedTaskIds.has(task.id)),
+  );
+  const selectedVisibleCount = $derived(
+    visible.filter((task) => selectedTaskIds.has(task.id)).length,
+  );
+  const allVisibleSelected = $derived(
+    visible.length > 0 && selectedVisibleCount === visible.length,
+  );
+  const canStartSelection = $derived(selectedTasks.some(canStartTask));
+  const canPauseSelection = $derived(selectedTasks.some(canPauseTask));
+  const canDeleteSelection = $derived(selectedTasks.some(canDeleteTask));
 
   $effect(() => {
     document.documentElement.dataset.theme = settings?.theme === "light" ? "light" : "dark";
   });
 
   $effect(() => {
-    if (deleteTarget) queueMicrotask(() => deleteCancel?.focus());
+    if (deleteTargets.length > 0) queueMicrotask(() => deleteCancel?.focus());
+  });
+
+  $effect(() => {
+    if (headerCheckboxEl) {
+      headerCheckboxEl.indeterminate =
+        selectedVisibleCount > 0 && !allVisibleSelected;
+    }
   });
 
   function upsert(task) {
@@ -103,6 +132,63 @@
         sendNotification({ title: "下载失败", body: task.filename || task.url });
       }
     }
+  }
+
+  function updateSelection(update) {
+    const next = new Set(selectedTaskIds);
+    update(next);
+    selectedTaskIds = next;
+  }
+
+  function setTaskSelected(id, selected) {
+    updateSelection((ids) => {
+      if (selected) ids.add(id);
+      else ids.delete(id);
+    });
+  }
+
+  function setVisibleSelected(selected) {
+    updateSelection((ids) => {
+      for (const task of visible) {
+        if (selected) ids.add(task.id);
+        else ids.delete(task.id);
+      }
+    });
+  }
+
+  function clearSelection() {
+    selectedTaskIds = new Set();
+  }
+
+  async function runSelectedAction(action, canRun) {
+    quickError = "";
+    try {
+      await Promise.all(
+        selectedTasks.filter(canRun).map((task) => action(task.id)),
+      );
+    } catch (error) {
+      quickError = String(error);
+    }
+  }
+
+  function requestDelete(targets) {
+    const deletable = (Array.isArray(targets) ? targets : [targets]).filter(
+      canDeleteTask,
+    );
+    if (deletable.length === 0) {
+      quickError = "请先暂停或取消任务再删除。";
+      return;
+    }
+    quickError = "";
+    deleteTargets = deletable;
+  }
+
+  function removeTasks(ids) {
+    tasks = tasks.filter((task) => !ids.has(task.id));
+    updateSelection((selected) => {
+      for (const id of ids) selected.delete(id);
+    });
+    if (ids.has(focusedTaskId)) focusedTaskId = null;
   }
 
   onMount(() => {
@@ -186,7 +272,7 @@
   function onKeydown(event) {
     if (event.key === "Escape") {
       menu = null;
-      deleteTarget = null;
+      deleteTargets = [];
       return;
     }
     const target = event.target;
@@ -198,11 +284,14 @@
     if (event.ctrlKey && event.key.toLowerCase() === "n") {
       event.preventDefault();
       openAdd("");
-    } else if (event.ctrlKey && ["1", "2", "3"].includes(event.key)) {
+    } else if (event.ctrlKey) {
+      const destination = navigation[Number(event.key) - 1];
+      if (!destination) return;
       event.preventDefault();
-      page = navigation[Number(event.key) - 1].id;
-    } else if (event.key === "Delete" && selected) {
-      requestDelete(selected);
+      page = destination.id;
+    } else if (event.key === "Delete") {
+      const targets = selectedTasks.length > 0 ? selectedTasks : focusedTask;
+      if (targets) requestDelete(targets);
     }
   }
 
@@ -229,44 +318,44 @@
     addOpen = false;
   }
 
-  // Queue one resolved media item; reused by the media resolver page.
   async function downloadMedia(values) {
-    const task = await addDownload(values);
-    upsert(task);
-    return task;
+    upsert(await addDownload(values));
   }
 
   async function submitSettings(next) {
     const saved = await saveSettings(next);
     settings = saved;
     settingsOpen = false;
-    return saved;
-  }
-
-  function requestDelete(task) {
-    if (ACTIVE_STATUSES.has(task.status)) {
-      quickError = "请先暂停或取消任务再删除。";
-      return;
-    }
-    deleteTarget = task;
   }
 
   async function confirmDelete(withFile) {
-    const task = deleteTarget;
-    deleteTarget = null;
-    if (!task) return;
-    try {
-      const ok = await deleteTask(task.id, withFile);
-      if (ok) tasks = tasks.filter((t) => t.id !== task.id);
-      else quickError = "请先暂停或取消任务再删除。";
-    } catch (error) {
-      quickError = String(error);
+    const targets = deleteTargets;
+    deleteTargets = [];
+    if (targets.length === 0) return;
+
+    const results = await Promise.allSettled(
+      targets.map((task) => deleteTask(task.id, withFile)),
+    );
+    const deletedIds = new Set();
+    let failedCount = 0;
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled" && result.value) {
+        deletedIds.add(targets[index].id);
+      } else {
+        failedCount += 1;
+      }
+    });
+
+    if (deletedIds.size > 0) removeTasks(deletedIds);
+    if (failedCount > 0) {
+      quickError = `${failedCount} 个任务删除失败或仍在进行中。`;
     }
   }
 
   function showMenu(event, task) {
     event.preventDefault();
-    selectedId = task.id;
+    focusedTaskId = task.id;
     menu = { task, x: event.clientX, y: event.clientY };
   }
 </script>
@@ -284,7 +373,6 @@
         >
           <AppIcon name={item.icon} size={17} />
           <span>{item.label}</span>
-          {#if item.badge}<small>{item.badge}</small>{/if}
         </button>
       {/each}
     </nav>
@@ -321,16 +409,24 @@
               <span>{visible.length} 个项目</span>
             </div>
             <div class="panel-heading-actions">
-              <button disabled={!canStartTask(selected)} onclick={() => selected && startTask(selected.id)}>开始</button>
-              <button disabled={!canPauseTask(selected)} onclick={() => selected && pauseTask(selected.id)}>暂停</button>
-              <button disabled={!selected} onclick={() => selected && openFolder(selected.destination)}><AppIcon name="folder" size={14} />目录</button>
-              <button class="danger" disabled={!canDeleteTask(selected)} onclick={() => selected && requestDelete(selected)}>删除</button>
+              {#if selectedTasks.length > 0}
+                <span class="selection-pill">已选 {selectedTasks.length} 项</span>
+                <button onclick={() => runSelectedAction(startTask, canStartTask)} disabled={!canStartSelection}>开始</button>
+                <button onclick={() => runSelectedAction(pauseTask, canPauseTask)} disabled={!canPauseSelection}>暂停</button>
+                <button class="danger" onclick={() => requestDelete(selectedTasks)} disabled={!canDeleteSelection}>删除</button>
+                <button class="ghost" onclick={clearSelection}>取消选择</button>
+              {:else}
+                <button disabled={!canStartTask(focusedTask)} onclick={() => focusedTask && startTask(focusedTask.id)}>开始</button>
+                <button disabled={!canPauseTask(focusedTask)} onclick={() => focusedTask && pauseTask(focusedTask.id)}>暂停</button>
+                <button disabled={!focusedTask} onclick={() => focusedTask && revealTaskFile(focusedTask)}><AppIcon name="folder" size={14} />定位</button>
+                <button class="danger" disabled={!canDeleteTask(focusedTask)} onclick={() => focusedTask && requestDelete(focusedTask)}>删除</button>
+              {/if}
             </div>
           </div>
           <div class="toolbar">
-            {#each [["all", "全部", stats.total], ["active", "进行中", stats.active], ["completed", "已完成", stats.completed], ["other", "其他", stats.other]] as [key, label, count]}
-              <button class="chip" class:active={filter === key} onclick={() => (filter = key)}>
-                {label}<span class="chip-count">{count}</span>
+            {#each taskFilters as item}
+              <button class="chip" class:active={filter === item.id} onclick={() => (filter = item.id)}>
+                {item.label}<span class="chip-count">{stats[item.id]}</span>
               </button>
             {/each}
           </div>
@@ -338,18 +434,41 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>文件</th><th>大小</th><th>状态</th><th class="pcol">进度</th><th>速度</th><th>剩余</th></tr>
+                <tr>
+                  <th class="select-cell">
+                    <input
+                      bind:this={headerCheckboxEl}
+                      type="checkbox"
+                      aria-label="全选当前筛选"
+                      checked={allVisibleSelected}
+                      disabled={visible.length === 0}
+                      onchange={(e) => setVisibleSelected(e.currentTarget.checked)}
+                    />
+                  </th>
+                  <th>文件</th><th>大小</th><th>状态</th><th class="pcol">进度</th><th>速度</th><th>剩余</th>
+                </tr>
               </thead>
               <tbody>
                 {#each visible as task (task.id)}
                   <tr
-                    class:selected={task.id === selectedId}
-                    onclick={() => (selectedId = task.id)}
-                    ondblclick={() => openFolder(task.destination)}
+                    class:selected={task.id === focusedTaskId}
+                    onclick={() => (focusedTaskId = task.id)}
+                    ondblclick={() => revealTaskFile(task)}
                     oncontextmenu={(e) => showMenu(e, task)}
                   >
+                    <td
+                      class="select-cell"
+                      onclick={(e) => e.stopPropagation()}
+                      ondblclick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`选择 ${task.filename || task.url}`}
+                        checked={selectedTaskIds.has(task.id)}
+                        onchange={(e) => setTaskSelected(task.id, e.currentTarget.checked)}
+                      />
+                    </td>
                     <td class="task-name" title={task.url}>
-                      <span class="file-icon"><AppIcon name="downloads" size={14} /></span>
                       <span>{task.filename || task.url}</span>
                     </td>
                     <td>{task.total_size ? formatBytes(task.total_size) : "—"}</td>
@@ -360,7 +479,7 @@
                   </tr>
                 {:else}
                   <tr>
-                    <td colspan="6" class="empty">
+                    <td colspan="7" class="empty">
                       <span class="empty-icon"><AppIcon name="downloads" size={24} /></span>
                       <strong>还没有下载任务</strong>
                       <small>添加直接链接，或从媒体解析结果中创建任务</small>
@@ -390,7 +509,7 @@
     {#if menu.task.status !== "completed"}
       <button onclick={() => cancelTask(menu.task.id)}>取消</button>
     {/if}
-    <button onclick={() => openFolder(menu.task.destination)}>打开所在目录</button>
+    <button onclick={() => revealTaskFile(menu.task)}>在文件夹中显示</button>
     {#if canDeleteTask(menu.task)}
       <button class="danger" onclick={() => requestDelete(menu.task)}>删除任务</button>
     {/if}
@@ -405,17 +524,19 @@
   <SettingsDialog {settings} onsave={submitSettings} onclose={() => (settingsOpen = false)} />
 {/if}
 
-{#if deleteTarget}
+{#if deleteTargets.length > 0}
   <div
     class="overlay"
     role="presentation"
-    onclick={(event) => event.target === event.currentTarget && (deleteTarget = null)}
+    onclick={(event) => event.target === event.currentTarget && (deleteTargets = [])}
   >
     <div class="dialog small" role="dialog" aria-modal="true" aria-labelledby="delete-title" tabindex="-1">
-      <h2 id="delete-title">删除任务</h2>
-      <p class="sub">是否同时删除已下载的文件？「仅删记录」会保留磁盘上的文件。</p>
+      <h2 id="delete-title">{deleteTargets.length === 1 ? "删除任务" : `删除 ${deleteTargets.length} 个任务`}</h2>
+      <p class="sub">
+        是否同时删除{deleteTargets.length === 1 ? "该任务" : "这些任务"}已下载的文件？「仅删记录」会保留磁盘上的文件。
+      </p>
       <div class="actions">
-        <button bind:this={deleteCancel} class="ghost" onclick={() => (deleteTarget = null)}>取消</button>
+        <button bind:this={deleteCancel} class="ghost" onclick={() => (deleteTargets = [])}>取消</button>
         <button onclick={() => confirmDelete(false)}>仅删记录</button>
         <button class="danger" onclick={() => confirmDelete(true)}>删除文件</button>
       </div>

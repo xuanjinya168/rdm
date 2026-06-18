@@ -16,7 +16,7 @@ export const pauseTask = (id) => invoke("pause_task", { id });
 export const cancelTask = (id) => invoke("cancel_task", { id });
 export const deleteTask = (id, deleteFile = false) =>
   invoke("delete_task", { id, deleteFile });
-export const openFolder = (path) => invoke("open_folder", { path });
+export const revealTaskFile = ({ id }) => invoke("reveal_task_file", { id });
 
 // Resolve a social-media / web post URL into its downloadable media items.
 export const resolveMedia = (url) => invoke("resolve_media", { url });

@@ -18,17 +18,6 @@ pub enum MediaKind {
     Gif,
 }
 
-impl MediaKind {
-    /// Short label used by the UI.
-    pub fn label(self) -> &'static str {
-        match self {
-            MediaKind::Image => "图片",
-            MediaKind::Video => "视频",
-            MediaKind::Gif => "动图",
-        }
-    }
-}
-
 /// One downloadable file extracted from a post.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MediaItem {

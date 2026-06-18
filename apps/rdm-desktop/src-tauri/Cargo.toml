@@ -23,7 +23,6 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-log = "2"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 rdm-domain = { path = "../../../crates/rdm-domain" }
 rdm-storage = { path = "../../../crates/rdm-storage" }
 rdm-http = { path = "../../../crates/rdm-http" }

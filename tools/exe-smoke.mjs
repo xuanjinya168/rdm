@@ -467,7 +467,7 @@ async function addDownload({ url, filename = "", sha256 = "", dialogOpen = false
       `input[placeholder="粘贴文件地址，按 Enter 添加"]`,
       url,
     );
-    await browser.clickButton("添加任务");
+    await browser.clickButton("添加");
     await waitForDialog(url);
   }
   if (filename) {
@@ -495,7 +495,7 @@ async function addDownload({ url, filename = "", sha256 = "", dialogOpen = false
 async function showAllTasks() {
   await browser.evaluate(`(() => {
     const button = [...document.querySelectorAll(".toolbar .chip")]
-      .find((candidate) => candidate.innerText.trim() === "全部");
+      .find((candidate) => candidate.innerText.trim().startsWith("全部"));
     if (!button) throw new Error("All-tasks filter is unavailable");
     if (!button.classList.contains("active")) button.click();
     return true;

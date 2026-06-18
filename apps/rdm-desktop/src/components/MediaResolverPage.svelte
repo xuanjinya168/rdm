@@ -45,7 +45,7 @@
     if (queued.has(index) || busy.has(index)) return;
     busy = new Set(busy).add(index);
     try {
-      await onDownload?.({ url: item.url, filename: item.filename });
+      await onDownload({ url: item.url, filename: item.filename });
       queued = new Set(queued).add(index);
     } catch (error) {
       setMessage(`「${item.filename}」加入下载失败：${error}`, "error");
@@ -77,7 +77,7 @@
 
     {#if message}
       <div
-        class="prototype-note"
+        class="status-message"
         class:message-error={messageType === "error"}
         class:message-success={messageType === "success"}
       >
@@ -181,7 +181,7 @@
   }
   .resolver-box input { flex: 1; min-width: 0; }
   .resolve-button { min-width: 84px; }
-  .prototype-note {
+  .status-message {
     position: relative;
     z-index: 1;
     display: flex;
@@ -196,8 +196,8 @@
     color: var(--info-soft);
     font-size: 12px;
   }
-  .prototype-note.message-error { border-color: var(--danger-muted); background: var(--danger-muted); color: var(--danger-soft); }
-  .prototype-note.message-success { border-color: var(--success-muted); background: var(--success-muted); color: var(--success-soft); }
+  .status-message.message-error { border-color: var(--danger-muted); background: var(--danger-muted); color: var(--danger-soft); }
+  .status-message.message-success { border-color: var(--success-muted); background: var(--success-muted); color: var(--success-soft); }
   .note-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .section-block {
     overflow: hidden;

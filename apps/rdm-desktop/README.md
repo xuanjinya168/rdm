@@ -63,4 +63,5 @@ apps/rdm-desktop/
 
 后端通过 `task://update` 事件向前端推送实时进度；命令见
 `src-tauri/src/lib.rs`（list_tasks / add_download / start_task / pause_task /
-cancel_task / delete_task / get_settings / save_settings）。
+cancel_task / delete_task / reveal_task_file / resolve_media / get_settings /
+save_settings）。
