@@ -81,13 +81,6 @@
       </button>
     </form>
 
-    <div class="source-list" aria-label="当前支持的资源类型">
-      <span class="supported">Twitter / X</span>
-      <span class="supported">Instagram</span>
-      <span class="supported">Threads</span>
-      <span class="planned">更多平台开发中</span>
-    </div>
-
     {#if message}
       <div
         class="prototype-note"
@@ -213,16 +206,6 @@
   }
   .clear { padding: 2px 5px; border: 0; background: transparent; color: var(--muted); font-size: 18px; }
   .resolve-button { min-width: 105px; }
-  .source-list { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
-  .source-list span {
-    padding: 4px 9px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--panel-raised);
-    color: var(--muted);
-    font-size: 11px;
-  }
-  .source-list .supported { border-color: var(--accent-muted); background: var(--accent-muted); color: var(--accent-soft); }
   .prototype-note {
     position: relative;
     z-index: 1;
