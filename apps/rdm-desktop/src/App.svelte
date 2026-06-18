@@ -330,8 +330,6 @@
           <button class="primary new-download" onclick={() => openAdd("")}>
             <AppIcon name="plus" size={16} />新建下载
           </button>
-        {:else}
-          <span class="phase-label">功能设计阶段</span>
         {/if}
       </div>
     </header>
