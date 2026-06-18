@@ -273,11 +273,6 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <div class="brand">
-      <span class="mark">R</span>
-      <div><div class="brand-name">RDM</div><div class="tag">资源下载管理器</div></div>
-    </div>
-
     <div class="nav-label">工作台</div>
     <nav aria-label="主要导航">
       {#each navigation as item}

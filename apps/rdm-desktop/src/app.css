@@ -145,21 +145,6 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
   border-right: 1px solid var(--sidebar-line);
   background: var(--sidebar);
 }
-.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; }
-.mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 10px;
-  background: linear-gradient(145deg, #6e83ff, #4860e7);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 750;
-  box-shadow: 0 8px 24px var(--primary-shadow);
-}
-.brand-name { font-size: 15px; font-weight: 720; letter-spacing: 0.04em; }
-.tag { margin-top: 1px; color: var(--muted); font-size: 9px; letter-spacing: 0.03em; }
 .nav-label { padding: 0 10px 8px; color: #5d6576; font-size: 9px; font-weight: 650; letter-spacing: 0.12em; text-transform: uppercase; }
 nav { display: flex; flex-direction: column; gap: 3px; }
 .nav-item, .settings-link {
