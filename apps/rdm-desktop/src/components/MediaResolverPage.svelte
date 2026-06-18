@@ -99,51 +99,53 @@
       {/if}
     </div>
 
-    {#if post}
-      {#if post.title}
-        <h4 class="post-title">{post.title}</h4>
-      {/if}
-      {#if post.text}
-        <p class="post-text">{post.text}</p>
-      {/if}
-      <div class="media-grid">
-        {#each post.media as item, index}
-          <article class="media-card">
-            <div class="media-meta">
-              <strong title={item.filename}>{item.filename}</strong>
-              <small>
-                {item.ext.toUpperCase()}{#if item.width && item.height} · {item.width}×{item.height}{/if}
-              </small>
-            </div>
-            <button
-              class="download-btn"
-              class:done={queued.has(index)}
-              disabled={queued.has(index) || busy.has(index)}
-              onclick={() => download(item, index)}
-            >
-              {#if queued.has(index)}
-                <AppIcon name="check" size={14} /> 已加入
-              {:else if busy.has(index)}
-                添加中…
-              {:else}
-                <AppIcon name="downloads" size={14} /> 下载
-              {/if}
-            </button>
-          </article>
-        {/each}
-      </div>
-      {#if downloadDir}
-        <p class="save-hint">下载将保存到默认目录：{downloadDir}</p>
-      {/if}
-    {:else}
-      <div class="result-placeholder">
-        <div class="empty-overlay">
-          <AppIcon name="media" size={25} />
-          <strong>解析结果会显示在这里</strong>
-          <span>粘贴帖子地址并点击「解析」</span>
+    <div class="section-body">
+      {#if post}
+        {#if post.title}
+          <h4 class="post-title">{post.title}</h4>
+        {/if}
+        {#if post.text}
+          <p class="post-text">{post.text}</p>
+        {/if}
+        <div class="media-grid">
+          {#each post.media as item, index}
+            <article class="media-card">
+              <div class="media-meta">
+                <strong title={item.filename}>{item.filename}</strong>
+                <small>
+                  {item.ext.toUpperCase()}{#if item.width && item.height} · {item.width}×{item.height}{/if}
+                </small>
+              </div>
+              <button
+                class="download-btn"
+                class:done={queued.has(index)}
+                disabled={queued.has(index) || busy.has(index)}
+                onclick={() => download(item, index)}
+              >
+                {#if queued.has(index)}
+                  <AppIcon name="check" size={14} /> 已加入
+                {:else if busy.has(index)}
+                  添加中…
+                {:else}
+                  <AppIcon name="downloads" size={14} /> 下载
+                {/if}
+              </button>
+            </article>
+          {/each}
         </div>
-      </div>
-    {/if}
+        {#if downloadDir}
+          <p class="save-hint">下载将保存到默认目录：{downloadDir}</p>
+        {/if}
+      {:else}
+        <div class="result-placeholder">
+          <div class="empty-overlay">
+            <AppIcon name="media" size={25} />
+            <strong>解析结果会显示在这里</strong>
+            <span>粘贴帖子地址并点击「解析」</span>
+          </div>
+        </div>
+      {/if}
+    </div>
   </section>
 
 </div>
@@ -205,9 +207,7 @@
     border-radius: 12px;
     background: var(--panel);
   }
-  .section-block > *:not(.section-heading) { padding: 0 20px; }
-  .section-block > *:first-child:not(.section-heading) { padding-top: 16px; }
-  .section-block > *:last-child:not(.section-heading) { padding-bottom: 20px; }
+  .section-body { padding: 16px 20px 20px; }
   .section-heading { display: flex; min-height: 55px; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
   .section-heading > div:first-child { display: flex; align-items: baseline; gap: 8px; }
   .section-heading strong { font-size: 12px; }
