@@ -310,7 +310,7 @@
             bind:value={quickUrl}
             placeholder="粘贴文件地址，按 Enter 添加"
           />
-          <button class="primary" type="submit">添加任务</button>
+          <button class="primary" type="submit">添加</button>
         </form>
         {#if quickError}<p class="banner">{quickError}</p>{/if}
 
