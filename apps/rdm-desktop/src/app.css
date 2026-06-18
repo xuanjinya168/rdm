@@ -215,7 +215,7 @@ nav { display: flex; flex-direction: column; gap: 3px; }
   flex-direction: column;
   background: var(--bg);
 }
-.page-content { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 28px; }
+.page-content { flex: 1; min-height: 0; overflow: auto; padding: 10px 14px; }
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
 .stat-card {
