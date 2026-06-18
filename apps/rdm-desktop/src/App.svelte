@@ -85,9 +85,7 @@
     total: tasks.length,
     active: tasks.filter((t) => ACTIVE_STATUSES.has(t.status)).length,
     completed: tasks.filter((t) => t.status === "completed").length,
-    speed: tasks
-      .filter((t) => ACTIVE_FILTER_STATUSES.has(t.status))
-      .reduce((sum, t) => sum + (speeds[t.id] || 0), 0),
+    other: tasks.filter((t) => ["paused", "failed", "canceled"].includes(t.status)).length,
   });
   const selected = $derived(tasks.find((t) => t.id === selectedId) ?? null);
 
@@ -336,25 +334,6 @@
 
     <div class="page-content">
       {#if page === "downloads"}
-        <section class="stats">
-          <div class="stat-card">
-            <span class="stat-icon blue"><AppIcon name="downloads" size={18} /></span>
-            <div><div class="k">全部任务</div><div class="v">{stats.total}</div></div>
-          </div>
-          <div class="stat-card">
-            <span class="stat-icon violet"><AppIcon name="activity" size={18} /></span>
-            <div><div class="k">正在下载</div><div class="v">{stats.active}</div></div>
-          </div>
-          <div class="stat-card">
-            <span class="stat-icon green"><AppIcon name="check" size={18} /></span>
-            <div><div class="k">已完成</div><div class="v">{stats.completed}</div></div>
-          </div>
-          <div class="stat-card">
-            <span class="stat-icon amber"><AppIcon name="bolt" size={18} /></span>
-            <div><div class="k">当前速度</div><div class="v speed">{formatSpeed(stats.speed)}</div></div>
-          </div>
-        </section>
-
         <section class="quick-card">
           <div class="quick-heading">
             <span class="quick-icon"><AppIcon name="link" size={18} /></span>
@@ -386,8 +365,10 @@
             </div>
           </div>
           <div class="toolbar">
-            {#each [["all", "全部"], ["active", "进行中"], ["completed", "已完成"], ["other", "其他"]] as [key, label]}
-              <button class="chip" class:active={filter === key} onclick={() => (filter = key)}>{label}</button>
+            {#each [["all", "全部", stats.total], ["active", "进行中", stats.active], ["completed", "已完成", stats.completed], ["other", "其他", stats.other]] as [key, label, count]}
+              <button class="chip" class:active={filter === key} onclick={() => (filter = key)}>
+                {label}<span class="chip-count">{count}</span>
+              </button>
             {/each}
           </div>
 
