@@ -206,7 +206,7 @@
     border-radius: 12px;
     background: var(--panel);
   }
-  .section-body { padding: 16px 20px 20px; }
+  .section-body { padding: 8px 20px 20px; }
   .section-heading { display: flex; min-height: 55px; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
   .section-heading > div:first-child { display: flex; align-items: baseline; gap: 8px; }
   .section-heading strong { font-size: 12px; }
