@@ -179,7 +179,7 @@
     gap: 7px;
   }
   .resolver-box input { flex: 1; min-width: 0; }
-  .resolve-button { min-width: 105px; }
+  .resolve-button { min-width: 84px; }
   .prototype-note {
     position: relative;
     z-index: 1;
