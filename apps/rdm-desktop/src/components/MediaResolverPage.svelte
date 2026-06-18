@@ -166,9 +166,9 @@
   .resolver-hero {
     position: relative;
     overflow: hidden;
-    padding: 30px;
+    padding: 13px 15px;
     border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
+    border-radius: 11px;
     background:
       radial-gradient(circle at 90% 0%, var(--accent-muted), transparent 34%),
       linear-gradient(135deg, var(--panel), var(--panel-deep));
