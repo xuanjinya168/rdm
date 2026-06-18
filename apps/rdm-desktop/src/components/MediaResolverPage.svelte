@@ -68,12 +68,6 @@
 
 <div class="media-page">
   <section class="resolver-hero">
-    <div class="hero-copy">
-      <div class="eyebrow"><AppIcon name="bolt" size={14} /> 聚合媒体解析</div>
-      <h2>一个链接，整理出所有可下载内容</h2>
-      <p>粘贴 Twitter / X、Instagram 或 Threads 帖子地址，RDM 将提取其中的图片、视频与动图。</p>
-    </div>
-
     <form class="resolver-box" onsubmit={resolve}>
       <div class="input-wrap">
         <AppIcon name="link" size={18} />
@@ -189,19 +183,6 @@
     border-radius: 50%;
     content: "";
   }
-  .hero-copy { position: relative; z-index: 1; max-width: 660px; }
-  .eyebrow {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 13px;
-    color: var(--accent-soft);
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.08em;
-  }
-  h2 { margin: 0; font-size: 27px; line-height: 1.25; letter-spacing: -0.025em; }
-  .hero-copy p { margin: 10px 0 24px; color: var(--muted); font-size: 14px; line-height: 1.7; }
   .resolver-box {
     position: relative;
     z-index: 1;
