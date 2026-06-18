@@ -213,7 +213,6 @@
   }
   .clear { padding: 2px 5px; border: 0; background: transparent; color: var(--muted); font-size: 18px; }
   .resolve-button { min-width: 105px; }
-  .resolve-button:disabled { opacity: 0.6; }
   .source-list { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
   .source-list span {
     padding: 4px 9px;
