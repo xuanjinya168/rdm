@@ -1,11 +1,10 @@
-//! Threads resolver.
+//! Threads 解析器。
 //!
-//! Port of ParseHub's `provider_api/threads.py` + `parsers/parser/threads.py`.
-//! Threads has no public API, so we replicate its web client's anonymous call:
-//! a form POST to `ajax/route-definition` carrying a random `lsd` token. The
-//! reply is a stream of `for (;;);`-prefixed JSON objects; the caption comes
-//! from the `first_response` object and the media from the Barcelona lightbox
-//! `preloader` object.
+//! 移植自 ParseHub 的 `provider_api/threads.py` + `parsers/parser/threads.py`。
+//! Threads 没有公开 API，因此我们复制其 web 客户端的匿名调用：
+//! 一个携带随机 `lsd` token 的表单 POST 到 `ajax/route-definition`。
+//! 回复是 `for (;;);` 前缀的 JSON 对象流；说明来自 `first_response` 对象，
+//! 媒体来自 Barcelona lightbox 的 `preloader` 对象。
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -16,10 +15,10 @@ use crate::resolver::MediaResolver;
 use crate::util::url_ext;
 
 const ROUTE_URL: &str = "https://www.threads.com/ajax/route-definition";
-/// Marker in the preloader `id` that carries the post's media payload.
+/// 在预加载 `id` 中标识帖子媒体负载的标记常量。
 const MEDIA_PRELOADER: &str = "BarcelonaLightboxDialogRootQueryRelayPreloader";
 
-/// Resolver for `threads.com` / `threads.net` post links.
+/// 解析 `threads.com` / `threads.net` 帖子链接。
 pub struct ThreadsResolver;
 
 impl ThreadsResolver {
@@ -27,7 +26,7 @@ impl ThreadsResolver {
         Self
     }
 
-    /// Extract `(@username, post_id)` from a `/@user/post/<id>` URL.
+    /// 从 `/@user/post/<id>` URL 中提取 `(@username, post_id)`。
     fn locate(url: &str) -> Option<(String, String)> {
         let path = url.split(['?', '#']).next().unwrap_or(url);
         let segments: Vec<&str> = path.split('/').collect();
@@ -41,7 +40,7 @@ impl ThreadsResolver {
         None
     }
 
-    /// A random alphanumeric `lsd` token, like the web client generates.
+    /// 类似 web 客户端生成的随机字母数字 `lsd` token。
     fn random_lsd() -> String {
         uuid::Uuid::new_v4()
             .simple()
@@ -152,8 +151,8 @@ impl MediaResolver for ThreadsResolver {
     }
 }
 
-/// Split a Facebook/Threads `for (;;);`-delimited JSONP body into JSON objects,
-/// skipping any chunk that does not parse on its own.
+/// 将 Facebook/Threads 的 `for (;;);` 分隔 JSONP 正文拆分为 JSON 对象，
+/// 跳过任何无法单独解析的块。
 fn split_jsonp(text: &str) -> Vec<Value> {
     text.split("for (;;);")
         .map(str::trim)
@@ -162,8 +161,8 @@ fn split_jsonp(text: &str) -> Vec<Value> {
         .collect()
 }
 
-/// Read the caption from a `first_response` object, handling the
-/// `redirect_result` shape used after a username change.
+/// 从 `first_response` 对象读取说明，处理用户名变更后使用的
+/// `redirect_result` 形状。
 fn fetch_content(object: &Value) -> Option<String> {
     let result = object.pointer("/payload/result")?;
     result
@@ -173,8 +172,8 @@ fn fetch_content(object: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Walk a media node by `media_type` and append every file it yields. Recurses
-/// for type 19 (text post that embeds linked media).
+/// 按 `media_type` 遍历媒体节点并追加其产生的每个文件。类型 19
+/// （嵌入链接媒体的文本帖子）会递归。
 fn collect_media(post_id: &str, node: &Value, media: &mut Vec<MediaItem>) {
     match node.get("media_type").and_then(Value::as_i64) {
         Some(1) => {
@@ -258,8 +257,8 @@ fn video_item(node: &Value, post_id: &str, index: usize) -> Option<MediaItem> {
     })
 }
 
-/// Prefer the image candidate's own dimensions, falling back to the node's
-/// `original_width`/`original_height`.
+/// 优先使用图片候选自身的尺寸，回退到节点的
+/// `original_width`/`original_height`。
 fn dimensions(node: &Value, candidate: &Value) -> (u32, u32) {
     let width = candidate
         .get("width")

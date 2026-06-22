@@ -1,28 +1,28 @@
-//! Process-local token-bucket rate limiter. Async port of the Python
-//! `downloader.rate_limit` module, shared by all download workers.
+//! 进程内的令牌桶速率限制器。所有下载工作线程共享，
+//! 从 Python 的 `downloader.rate_limit` 模块异步化移植而来。
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Longest a single wait sleeps before re-checking the abort signal, so a
-/// paused or canceled download unblocks within ~50 ms even under a tight limit.
+/// 单次等待最大的睡眠时长，超过后会再次检查中止信号；
+/// 这样即使在严格的限速下，暂停 / 取消也能在约 50 ms 内解除阻塞。
 const MAX_SLEEP: f64 = 0.05;
 
 struct Bucket {
-    /// Bytes per second; `0` means unlimited.
+    /// 每秒允许的字节数；`0` 表示不限速。
     rate: u64,
     tokens: f64,
     last_refill: Instant,
 }
 
-/// A token bucket capping aggregate download throughput.
+/// 用于限制整体下载吞吐量的令牌桶。
 pub struct RateLimiter {
     bucket: Mutex<Bucket>,
 }
 
 impl RateLimiter {
-    /// Create a limiter at `bytes_per_second` (`0` = unlimited), starting with
-    /// a full bucket.
+    /// 以 `bytes_per_second`（`0` = 不限速）创建一个限速器，
+    /// 初始桶内令牌为满。
     pub fn new(bytes_per_second: u64) -> Self {
         Self {
             bucket: Mutex::new(Bucket {
@@ -33,12 +33,12 @@ impl RateLimiter {
         }
     }
 
-    /// The current limit in bytes per second (`0` = unlimited).
+    /// 当前限速值（字节 / 秒，`0` 表示不限速）。
     pub fn rate(&self) -> u64 {
         self.lock().rate
     }
 
-    /// Change the limit, never letting the bucket exceed the new capacity.
+    /// 修改限速值，确保桶内已有的令牌不会超过新的容量。
     pub fn set_rate(&self, bytes_per_second: u64) {
         let mut bucket = self.lock();
         bucket.rate = bytes_per_second;
@@ -46,11 +46,11 @@ impl RateLimiter {
         bucket.last_refill = Instant::now();
     }
 
-    /// Wait until `amount` tokens are available, then consume them.
+    /// 等待直到累积出 `amount` 个令牌，然后消费它们。
     ///
-    /// Returns `false` if `abort` reported `true` while waiting, so callers stay
-    /// responsive to pause/cancel even under a tight limit. An unlimited limiter
-    /// (or a zero request) returns immediately without touching the bucket.
+    /// 若在等待过程中 `abort` 返回 `true`，则返回 `false`，使调用者
+    /// 在严格限速下也能及时响应暂停 / 取消。不限速的限速器
+    /// （或请求量为 0）会立即返回，且不会修改桶的状态。
     pub async fn acquire<F: Fn() -> bool>(&self, amount: u64, abort: F) -> bool {
         if amount == 0 || self.rate() == 0 {
             return true;
@@ -63,9 +63,8 @@ impl RateLimiter {
                 }
                 let now = Instant::now();
                 let elapsed = now.duration_since(bucket.last_refill).as_secs_f64();
-                // The bucket can briefly hold a single oversized request's worth
-                // of tokens so a chunk larger than one second of rate still
-                // drains rather than deadlocking.
+                // 桶可以短暂持有单个超大请求的令牌数，因此大于一秒速率的块
+                // 仍可排空，而非死锁。
                 let capacity = bucket.rate.max(amount) as f64;
                 bucket.tokens = (bucket.tokens + elapsed * bucket.rate as f64).min(capacity);
                 bucket.last_refill = now;
@@ -107,7 +106,7 @@ mod tests {
         assert!(limiter.acquire(1024 * 1024, || false).await); // drain the initial bucket
         let started = Instant::now();
         assert!(limiter.acquire(256 * 1024, || false).await);
-        // 256 KiB at 1 MiB/s needs ~0.25 s.
+        // 以 1 MiB/s 的速度传输 256 KiB 需要约 0.25 秒。
         assert!(started.elapsed() >= Duration::from_millis(150));
     }
 
@@ -125,7 +124,7 @@ mod tests {
         let limiter = RateLimiter::new(10 * 1024 * 1024);
         limiter.set_rate(1024);
         assert_eq!(limiter.rate(), 1024);
-        // Tokens were capped to the new rate, so a large request must now wait.
+        // 令牌已被限制到新的速率，因此大请求现在必须等待。
         let started = Instant::now();
         assert!(limiter.acquire(4096, || false).await);
         assert!(started.elapsed() >= Duration::from_millis(150));

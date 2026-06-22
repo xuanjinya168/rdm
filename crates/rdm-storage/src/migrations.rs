@@ -1,6 +1,6 @@
-//! Schema migrations driven by `PRAGMA user_version`. Each migration bumps
-//! the stored version, and `apply_migrations` only runs steps newer than the
-//! database's current version, so existing databases upgrade in place.
+//! 基于 `PRAGMA user_version` 的模式迁移。每个迁移步骤都会提升
+//! 已存储的版本号；`apply_migrations` 仅会运行比数据库当前版本
+//! 更新的步骤，从而原地升级已有的数据库。
 
 use rusqlite::Connection;
 
@@ -66,9 +66,9 @@ fn add_checksum_columns(conn: &Connection) -> rusqlite::Result<()> {
 const MIGRATIONS: &[fn(&Connection) -> rusqlite::Result<()>] =
     &[create_initial_schema, add_checksum_columns];
 
-/// Bring `conn` up to [`LATEST_SCHEMA_VERSION`], applying only the steps newer
-/// than its current `user_version`. Refuses to touch a database written by a
-/// future schema version.
+/// 将 `conn` 升级至 [`LATEST_SCHEMA_VERSION`]，仅应用比其当前
+/// `user_version` 更新的步骤。对于由未来更高 schema 版本写入的
+/// 数据库会拒绝处理。
 pub fn apply_migrations(conn: &Connection) -> Result<(), StoreError> {
     let current: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if current > LATEST_SCHEMA_VERSION {

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Errors raised by the persistence layer.
+/// 持久化层抛出的错误。
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("Download database is closed")]

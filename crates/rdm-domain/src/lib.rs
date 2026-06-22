@@ -1,10 +1,9 @@
-//! Core domain layer for RDM.
+//! RDM 的核心领域层。
 //!
-//! Pure, dependency-light building blocks shared by the engine, storage and
-//! UI crates: the task/segment model, input validation, segment planning and
-//! application settings. Nothing here performs network or database I/O, so the
-//! whole crate is unit-testable in isolation — mirroring the Python `models`,
-//! `validation`, `downloader.segments` and `config` modules.
+//! 一组无副作用、依赖极少的构件，供 engine、storage 与 UI crate 共用：
+//! 任务 / 分段模型、输入校验、分段规划以及应用设置。本层不进行任何
+//! 网络或数据库 I/O，因此整个 crate 可以独立进行单元测试 ——
+//! 对应于 Python 中的 `models`、`validation`、`downloader.segments` 与 `config` 模块。
 
 pub mod config;
 pub mod error;

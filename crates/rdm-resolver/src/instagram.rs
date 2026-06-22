@@ -1,10 +1,9 @@
-//! Instagram resolver.
+//! Instagram 解析器。
 //!
-//! Port of ParseHub's `parsers/parser/instagram.py`, which delegates to
-//! `instaloader`. Rather than reimplement that library we issue the same
-//! anonymous request it makes for a single post: a GraphQL `doc_id` query to
-//! `graphql/query` carrying the public web `x-ig-app-id`. The response's
-//! `data.xdt_shortcode_media` node describes the post and its media.
+//! 移植自 ParseHub 的 `parsers/parser/instagram.py`，后者委托给 `instaloader`。
+//! 我们并未重新实现该库，而是向其发出相同的匿名请求（用于单个帖子）：
+//! 一个携带公共 web `x-ig-app-id` 的 GraphQL `doc_id` 查询到 `graphql/query`。
+//! 响应的 `data.xdt_shortcode_media` 节点描述帖子和其中的媒体。
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -15,15 +14,15 @@ use crate::resolver::MediaResolver;
 use crate::util::url_ext;
 
 const GRAPHQL_URL: &str = "https://www.instagram.com/graphql/query";
-/// Persisted-query id for the single-post query (same one instaloader uses).
+/// 单帖子查询的持久化查询 id（与 instaloader 使用的相同）。
 const DOC_ID: &str = "8845758582119845";
-/// Public web app id that unlocks anonymous reads of public posts.
+/// 解锁公开帖子匿名读取的公共 web 应用 id。
 const APP_ID: &str = "936619743392459";
 
-/// URL path keywords that precede a post shortcode.
+/// URL 路径中短代码前的关键词。
 const SHORTCODE_KEYWORDS: [&str; 4] = ["p", "reel", "reels", "tv"];
 
-/// Resolver for `instagram.com` post / reel / share links.
+/// `instagram.com` 帖子 / reel / share 链接的解析器。
 pub struct InstagramResolver;
 
 impl InstagramResolver {
@@ -31,11 +30,10 @@ impl InstagramResolver {
         Self
     }
 
-    /// Extract the post shortcode from a canonical post URL.
-    ///
-    /// Handles `/p/<code>`, `/reel(s)/<code>`, `/tv/<code>` and the
-    /// `/<user>/p/<code>` variants. `/share/` links must be redirect-resolved
-    /// first (see [`InstagramResolver::shortcode_for`]).
+    /// 从规范的帖子 URL 中提取帖子短代码。
+    /// 处理 `/p/<code>`、`/reel(s)/<code>`、`/tv/<code>` 以及
+    /// `/<user>/p/<code>` 变体。`/share/` 链接必须先通过重定向解析
+    /// （见 [`InstagramResolver::shortcode_for`]）。
     fn shortcode(url: &str) -> Option<String> {
         let path = url
             .split(['?', '#'])
@@ -54,7 +52,7 @@ impl InstagramResolver {
         None
     }
 
-    /// Resolve the shortcode, following the redirect that `/share/` links use.
+    /// 解析短代码，跟随 `/share/` 链接使用的重定向。
     async fn shortcode_for(
         &self,
         client: &reqwest::Client,
@@ -64,7 +62,7 @@ impl InstagramResolver {
             return Ok(code);
         }
         if url.contains("/share/") {
-            // A share link 302s to the real post URL; follow it and retry.
+            // 分享链接通过 302 重定向到真实帖子 URL；跟随它并重试。
             let response = client.get(url).send().await?.error_for_status()?;
             let final_url = response.url().as_str().to_string();
             if let Some(code) = Self::shortcode(&final_url) {
@@ -116,12 +114,12 @@ impl InstagramResolver {
             .pointer("/edge_sidecar_to_children/edges")
             .and_then(Value::as_array)
         {
-            // Carousel: one media item per child node.
+            // 轮播：每个子节点一个媒体项。
             for node in edges.iter().filter_map(|edge| edge.get("node")) {
                 Self::push_node(&mut media, shortcode, node);
             }
         } else {
-            // A single image or video lives on the root node itself.
+            // 单个图片或视频位于根节点本身。
             Self::push_node(&mut media, shortcode, media_root);
         }
 
@@ -134,8 +132,8 @@ impl InstagramResolver {
         })
     }
 
-    /// Append the media described by one node (`xdt_shortcode_media` or a
-    /// sidecar child) to `media`.
+    /// 将由一个节点（`xdt_shortcode_media` 或轮播子节点）描述的媒体
+    /// 追加到 `media`。
     fn push_node(media: &mut Vec<MediaItem>, shortcode: &str, node: &Value) {
         let is_video = node
             .get("is_video")

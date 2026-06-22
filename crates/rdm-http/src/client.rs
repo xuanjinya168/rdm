@@ -1,4 +1,4 @@
-//! Construction of the shared reqwest client.
+//! 共享 reqwest 客户端的构造。
 
 use std::time::Duration;
 
@@ -6,14 +6,14 @@ use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING};
 
 use crate::error::HttpError;
 
-/// Sent as the `User-Agent` on every request.
+/// 每次请求发送的 `User-Agent`。
 pub const USER_AGENT: &str = concat!("RDM/", env!("CARGO_PKG_VERSION"));
 
-/// Optional proxy configuration applied when building a client.
+/// 构造客户端时应用的可选代理配置。
 ///
-/// `url` may use the `http://`, `https://` or `socks5://` schemes. When
-/// `username` is non-empty the credentials are sent as Basic auth. The value is
-/// stored already-trimmed by [`AppSettings::validated`].
+/// `url` 可使用 `http://`、`https://` 或 `socks5://` 协议。
+/// 当 `username` 非空时，会以 Basic 认证发送凭据。值在
+/// [`AppSettings::validated`] 中已预先去除首尾空白。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProxyConfig {
     pub url: String,
@@ -22,15 +22,15 @@ pub struct ProxyConfig {
 }
 
 impl ProxyConfig {
-    /// Whether this configuration actually requests a proxy.
+    /// 该配置是否实际启用了代理。
     pub fn is_active(&self) -> bool {
         !self.url.trim().is_empty()
     }
 }
 
-/// Configure `builder` with the proxy described by `proxy`, if any. A proxy URL
-/// that reqwest cannot parse is logged and silently skipped so that a typo does
-/// not break every download.
+/// 使用 `proxy` 描述的代理（若存在）配置 `builder`。
+/// 对于 reqwest 无法解析的代理 URL 仅记录日志并静默跳过，
+/// 以避免一个笔误就破坏所有下载。
 fn apply_proxy(mut builder: reqwest::ClientBuilder, proxy: &ProxyConfig) -> reqwest::ClientBuilder {
     if !proxy.is_active() {
         return builder;
@@ -50,17 +50,16 @@ fn apply_proxy(mut builder: reqwest::ClientBuilder, proxy: &ProxyConfig) -> reqw
     builder
 }
 
-/// Build a client sized for `connections` parallel segment requests.
+/// 为 `connections` 个并发的分段请求构建客户端。
 ///
-/// Mirrors the Python engine's httpx setup: identity encoding (so byte ranges
-/// map straight to file offsets), redirect following, and a pool a little
-/// larger than the worker count. There is deliberately no total-request
-/// timeout — a multi-gigabyte download must not be killed mid-stream — only a
-/// connect timeout and a per-read inactivity timeout.
+/// 复刻 Python 引擎的 httpx 配置：使用 identity 编码（让字节区间
+/// 与文件偏移一一对应）、跟随重定向，并将连接池略大于工作线程数。
+/// 故意不设置总请求超时 —— 多 GB 的下载不应在中途被中断；
+/// 仅设置连接超时与每次读取的不活跃超时。
 ///
-/// When `proxy` is active (`ProxyConfig::is_active`), every request is routed
-/// through it; otherwise reqwest's defaults (including any `HTTP_PROXY` /
-/// `HTTPS_PROXY` environment variables) apply.
+/// 当 `proxy` 处于激活状态（[`ProxyConfig::is_active`]）时，
+/// 所有请求都会经由代理；否则使用 reqwest 的默认行为
+/// （包括 `HTTP_PROXY` / `HTTPS_PROXY` 等环境变量）。
 pub fn build_client(connections: u32, proxy: &ProxyConfig) -> Result<reqwest::Client, HttpError> {
     let mut headers = HeaderMap::new();
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
@@ -81,7 +80,7 @@ mod tests {
 
     #[test]
     fn builds_without_proxy() {
-        // No real connection is opened; building only wires configuration.
+        // 未打开真实连接；构建仅用于配置的拼接。
         let client = build_client(8, &ProxyConfig::default()).unwrap();
         assert!(client.get("http://example.invalid").build().is_ok());
     }
@@ -107,8 +106,7 @@ mod tests {
 
     #[test]
     fn invalid_proxy_url_falls_back_to_a_buildable_client() {
-        // reqwest rejects a URL with no scheme; we skip the proxy rather than
-        // failing the whole client build.
+        // reqwest 拒绝无协议的 URL；我们跳过代理，而非使整个客户端构建失败。
         let proxy = ProxyConfig {
             url: "not-a-valid-url".to_string(),
             ..ProxyConfig::default()

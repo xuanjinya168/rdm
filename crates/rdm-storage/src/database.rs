@@ -1,4 +1,4 @@
-//! The download database. Port of the Python `DownloadDatabase`.
+//! 下载任务数据库。从 Python 的 `DownloadDatabase` 迁移而来。
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -10,18 +10,18 @@ use rusqlite::{params, Connection};
 use crate::error::StoreError;
 use crate::migrations::apply_migrations;
 
-/// A persistent SQLite store for tasks and their segments.
+/// 持久化存储任务及其分段的 SQLite 数据库。
 ///
-/// Holds one connection behind a mutex; `None` means the database has been
-/// closed and every operation thereafter fails with [`StoreError::Closed`].
+/// 由互斥锁保护的单一连接；当内部为 `None` 时表示数据库已关闭，
+/// 此后任何操作都会返回 [`StoreError::Closed`]。
 pub struct DownloadDatabase {
     pub path: PathBuf,
     connection: Mutex<Option<Connection>>,
 }
 
 impl DownloadDatabase {
-    /// Open (creating if needed) the database at `path`, or the default
-    /// `downloads.db` under the app data directory when `None`.
+    /// 打开 `path` 处的数据库（必要时自动创建）；
+    /// 若 `path` 为 `None`，则使用应用数据目录下的默认 `downloads.db`。
     pub fn open(path: Option<PathBuf>) -> Result<Self, StoreError> {
         let path = path.unwrap_or_else(|| app_data_dir().join("downloads.db"));
         if let Some(parent) = path.parent() {
@@ -39,7 +39,7 @@ impl DownloadDatabase {
         })
     }
 
-    /// Run `f` with the live connection, or fail if the database is closed.
+    /// 在活动连接上运行 `f`；若数据库已关闭则直接返回错误。
     fn with_conn<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, StoreError>,
@@ -51,14 +51,14 @@ impl DownloadDatabase {
         }
     }
 
-    /// Close the connection. Idempotent.
+    /// 关闭数据库连接；多次调用是幂等的。
     pub fn close(&self) {
         let mut guard = self.connection.lock().expect("database mutex poisoned");
         guard.take();
     }
 
-    /// Insert or update a task. On conflict every mutable field is refreshed
-    /// except `created_at`, which is fixed at first insert.
+    /// 插入或更新一个任务。若主键冲突，会刷新除 `created_at` 之外的
+    /// 全部可变字段，`created_at` 在首次插入时确定后保持不变。
     pub fn save_task(&self, task: &DownloadTask) -> Result<(), StoreError> {
         self.with_conn(|conn| {
             conn.execute(
@@ -106,9 +106,9 @@ impl DownloadDatabase {
         })
     }
 
-    /// Load every task, newest first. Statuses left mid-flight by a crash
-    /// (probing/downloading/verifying) come back as paused; an unrecognized
-    /// stored status becomes failed with a descriptive error.
+    /// 加载全部任务，按创建时间倒序排列。崩溃时处于「进行中」
+    /// 状态（probing/downloading/verifying）的任务会恢复为 paused；
+    /// 无法识别的状态会变为 failed 并附带描述性错误。
     pub fn load_tasks(&self) -> Result<Vec<DownloadTask>, StoreError> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
@@ -158,7 +158,7 @@ impl DownloadDatabase {
         })
     }
 
-    /// Delete a task; its segments cascade away via the foreign key.
+    /// 删除一个任务；其分段会通过外键级联删除。
     pub fn delete_task(&self, task_id: &str) -> Result<(), StoreError> {
         self.with_conn(|conn| {
             conn.execute("DELETE FROM tasks WHERE id = ?1", [task_id])?;
@@ -166,7 +166,7 @@ impl DownloadDatabase {
         })
     }
 
-    /// Replace all segments of a task in one transaction.
+    /// 在单个事务中替换任务的全部分段。
     pub fn save_segments(&self, task_id: &str, segments: &[Segment]) -> Result<(), StoreError> {
         self.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
@@ -192,9 +192,9 @@ impl DownloadDatabase {
         })
     }
 
-    /// Persist a segment's progress. Leaves `end_byte` untouched: ranges are
-    /// only ever rewritten atomically by [`Self::save_segments`] or
-    /// [`Self::split_segment`], so stored ranges always partition the file.
+    /// 持久化分段的下载进度。不会修改 `end_byte`：
+    /// 区间只会被 [`Self::save_segments`] 或 [`Self::split_segment`]
+    /// 整体重写，因此存储的区间始终是文件的一个划分。
     pub fn update_segment(&self, segment: &Segment) -> Result<(), StoreError> {
         self.with_conn(|conn| {
             conn.execute(
@@ -206,9 +206,9 @@ impl DownloadDatabase {
         })
     }
 
-    /// Persist a dynamic split atomically: the shrunk segment's new end and the
-    /// freshly created segment must land in one transaction, or a crash in
-    /// between would leave overlapping or double-counted ranges for resume.
+    /// 以原子方式持久化一次动态切分：被缩短的分段的新末端
+    /// 与新建的分段必须落在同一事务中；否则中途崩溃会留下
+    /// 重叠或重复计数的区间，影响续传的正确性。
     pub fn split_segment(&self, shrunk: &Segment, created: &Segment) -> Result<(), StoreError> {
         self.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
@@ -239,7 +239,7 @@ impl DownloadDatabase {
         })
     }
 
-    /// Load a task's segments ordered by index.
+    /// 加载任务的全部分段，按索引升序返回。
     pub fn load_segments(&self, task_id: &str) -> Result<Vec<Segment>, StoreError> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
@@ -307,7 +307,7 @@ mod tests {
         let loaded = &db.load_tasks().unwrap()[0];
         let segments = db.load_segments(&task.id).unwrap();
 
-        // An active status persisted before a crash resumes as paused.
+        // 崩溃前持久化的活动状态在恢复时变为暂停。
         assert_eq!(loaded.status, TaskStatus::Paused);
         assert_eq!(loaded.filename, "file.bin");
         assert_eq!(loaded.total_size, Some(100));

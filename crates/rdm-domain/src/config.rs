@@ -1,5 +1,5 @@
-//! Application settings and their on-disk store. Port of the Python `config`
-//! module, including its "reject bad value, fall back to default" semantics.
+//! 应用程序设置及其磁盘存储。从 Python `config` 模块迁移而来，
+//! 保留了「拒绝非法值并回退为默认值」的语义。
 
 use std::fs;
 use std::io::Write;
@@ -20,7 +20,7 @@ fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Per-user application data directory (`%LOCALAPPDATA%\RDM`, else `~/.rdm`).
+/// 当前用户的应用数据目录（`%LOCALAPPDATA%\RDM`，若不可用则为 `~/.rdm`）。
 pub fn app_data_dir() -> PathBuf {
     if let Some(base) = std::env::var_os("LOCALAPPDATA") {
         if !base.is_empty() {
@@ -30,7 +30,7 @@ pub fn app_data_dir() -> PathBuf {
     home_dir().join(".rdm")
 }
 
-/// User-configurable application settings.
+/// 用户可配置的应用程序设置。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppSettings {
     pub download_dir: String,
@@ -41,13 +41,13 @@ pub struct AppSettings {
     pub clipboard_monitoring: bool,
     pub minimize_to_tray: bool,
     pub theme: String,
-    /// When true, outbound download/resolve requests go through `proxy_url`.
+    /// 为 true 时，出站下载 / 解析请求会通过 `proxy_url` 转发。
     pub proxy_enabled: bool,
-    /// Proxy address, e.g. `http://127.0.0.1:7890` or `socks5://127.0.0.1:1080`.
+    /// 代理地址，例如 `http://127.0.0.1:7890` 或 `socks5://127.0.0.1:1080`。
     pub proxy_url: String,
-    /// Optional username for proxy authentication.
+    /// 代理认证的可选用户名。
     pub proxy_username: String,
-    /// Optional password for proxy authentication.
+    /// 代理认证的可选密码。
     pub proxy_password: String,
 }
 
@@ -71,7 +71,7 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    /// Return the canonical settings accepted by the application.
+    /// 返回应用可接受的规范化设置（非法值会被替换为默认值）。
     pub fn validated(&self) -> Self {
         let defaults = Self::default();
         Self {
@@ -108,9 +108,9 @@ impl AppSettings {
             } else {
                 defaults.theme
             },
-            // Proxy URL/credentials are trimmed here; protocol validity is left
-            // to reqwest when the client is built, where a bad value falls back
-            // to a direct connection rather than breaking downloads.
+            // 代理 URL/凭据在此处去除首尾空格；协议合法性留给
+            // reqwest 在构建客户端时检查，非法值会回退为直连，
+            // 而非中断下载。
             proxy_enabled: self.proxy_enabled,
             proxy_url: self.proxy_url.trim().to_string(),
             proxy_username: self.proxy_username.trim().to_string(),
@@ -118,16 +118,16 @@ impl AppSettings {
         }
     }
 
-    /// Build settings from untrusted JSON, replacing any missing or
-    /// out-of-range field with its default rather than failing.
+    /// 从不可信的 JSON 中解析设置：缺失或越界的字段会替换为默认值，
+    /// 不会因此返回错误。
     pub fn from_value(raw: &Value) -> Self {
         let defaults = Self::default();
         let Some(obj) = raw.as_object() else {
             return defaults;
         };
 
-        // Accept only JSON integers in range — floats and bools are rejected,
-        // matching the Python `type(value) is int` check.
+        // 仅接受范围内的 JSON 整数——浮点数和布尔值会被拒绝，
+        // 以匹配 Python 中 `type(value) is int` 的检查。
         let bounded = |name: &str, default: i64, min: i64, max: i64| -> i64 {
             match obj.get(name) {
                 Some(Value::Number(n)) if n.is_i64() || n.is_u64() => match n.as_i64() {
@@ -191,20 +191,20 @@ impl AppSettings {
     }
 }
 
-/// Loads and atomically persists [`AppSettings`] as JSON.
+/// 加载并以原子方式将 [`AppSettings`] 持久化为 JSON。
 pub struct SettingsStore {
     pub path: PathBuf,
 }
 
 impl SettingsStore {
-    /// Store at `path`, or the default `settings.json` under [`app_data_dir`].
+    /// 存储在 `path`，若未提供则使用 [`app_data_dir`] 下的默认 `settings.json`。
     pub fn new(path: Option<PathBuf>) -> Self {
         Self {
             path: path.unwrap_or_else(|| app_data_dir().join("settings.json")),
         }
     }
 
-    /// Read settings, falling back to defaults on any read or parse error.
+    /// 读取设置；任何读取或解析错误都会回退为默认值。
     pub fn load(&self) -> AppSettings {
         let Ok(text) = fs::read_to_string(&self.path) else {
             return AppSettings::default();
@@ -215,7 +215,7 @@ impl SettingsStore {
         }
     }
 
-    /// Re-validate and write settings via a temp file + atomic rename.
+    /// 重新校验设置后，通过临时文件 + 原子重命名写入。
     pub fn save(&self, settings: &AppSettings) -> std::io::Result<AppSettings> {
         let validated = settings.validated();
         if let Some(parent) = self.path.parent() {
@@ -386,21 +386,20 @@ mod tests {
 
     #[test]
     fn proxy_fields_default_and_validate() {
-        // Missing proxy fields fall back to defaults (proxy disabled).
+        // 缺少代理字段时回退为默认值（代理禁用）。
         let settings = AppSettings::from_value(&serde_json::json!({}));
         assert!(!settings.proxy_enabled);
         assert_eq!(settings.proxy_url, "");
         assert_eq!(settings.proxy_username, "");
         assert_eq!(settings.proxy_password, "");
 
-        // Wrong type for proxy_enabled -> default false.
+        // proxy_enabled 类型错误时 -> 默认为 false。
         let settings = AppSettings::from_value(&serde_json::json!({
             "proxy_enabled": "yes"
         }));
         assert!(!settings.proxy_enabled);
 
-        // validated() trims surrounding whitespace on url/username but keeps
-        // the password verbatim.
+        // validated() 会去除 url/username 的首尾空格，但密码保持原样。
         let raw = AppSettings {
             proxy_enabled: true,
             proxy_url: "  http://127.0.0.1:7890  ".to_string(),

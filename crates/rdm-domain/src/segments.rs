@@ -1,10 +1,9 @@
-//! Segment planning and resume validation. Port of the Python
-//! `downloader.segments` module.
+//! 分段规划与续传校验。从 Python `downloader.segments` 模块迁移而来。
 
 use crate::models::Segment;
 
-/// Split a download into evenly sized segments. A server that can't seek, or
-/// an unknown total size, yields a single open-ended segment.
+/// 将一个下载任务切分为大小接近的分段。当服务器不支持随机读取，
+/// 或总大小未知时，会退化为单条开放式的分段。
 pub fn build_segments(
     task_id: &str,
     total_size: Option<u64>,
@@ -34,8 +33,8 @@ pub fn build_segments(
     segments
 }
 
-/// True when persisted segments form a gapless cover of `[0, total_size)` that
-/// matches the on-disk `.part` size, so the download can safely resume.
+/// 当持久化的分段能够无间隙地覆盖 `[0, total_size)`，
+/// 且与磁盘上 `.part` 文件大小一致时返回 true，表示可以安全续传。
 pub fn valid_resume_segments(
     segments: &[Segment],
     total_size: Option<u64>,
@@ -93,7 +92,7 @@ mod tests {
     fn splits_evenly_and_covers_range() {
         let segs = build_segments("t", Some(1003), true, 4, 1);
         assert_eq!(segs.len(), 4);
-        // 1003 / 4 = 250 r3 -> first three get 251, last gets 250.
+        // 1003 / 4 = 250 余 3 -> 前三个得到 251，最后一个得到 250。
         assert_eq!(segs[0].size(), Some(251));
         assert_eq!(segs[3].size(), Some(250));
         let covered: u64 = segs.iter().map(|s| s.size().unwrap()).sum();
@@ -103,7 +102,7 @@ mod tests {
 
     #[test]
     fn segment_count_bounded_by_minimum_size() {
-        // Only room for 2 segments of >=512 bytes despite 8 connections.
+        // 尽管有 8 个连接，但只有 2 个 >=512 字节的分段的空间。
         let segs = build_segments("t", Some(1024), true, 8, 512);
         assert_eq!(segs.len(), 2);
     }

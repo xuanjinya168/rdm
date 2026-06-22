@@ -1,10 +1,9 @@
-//! Twitter / X resolver.
+//! Twitter / X 解析器。
 //!
-//! Port of ParseHub's `provider_api/twitter.py` + `parsers/parser/twitter.py`.
-//! It reads a single tweet through the public GraphQL `TweetResultByRestId`
-//! endpoint using the well-known web bearer token. Unlike the Python reference
-//! we first activate a guest token (`/1.1/guest/activate.json`), which the
-//! endpoint requires for anonymous reads.
+//! 移植自 ParseHub 的 `provider_api/twitter.py` + `parsers/parser/twitter.py`。
+//! 它通过公开的 GraphQL `TweetResultByRestId` 端点使用已知的 web bearer token
+//! 读取单个推文。与 Python 参考实现不同，我们首先激活访客 token
+//! （`/1.1/guest/activate.json`），端点要求匿名读取时使用该 token。
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -14,21 +13,21 @@ use crate::model::{MediaItem, MediaKind, ResolvedPost};
 use crate::resolver::MediaResolver;
 use crate::util::url_ext;
 
-/// Public web-app bearer token shipped by twitter.com (same value ParseHub and
-/// yt-dlp use). It only grants access to public, anonymous reads.
+/// twitter.com 提供的公共 web 应用 bearer token（ParseHub 和 yt-dlp 使用的相同值）。
+/// 它仅授予公开匿名读取的权限。
 const BEARER: &str = "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
 const GUEST_ACTIVATE_URL: &str = "https://api.twitter.com/1.1/guest/activate.json";
 const TWEET_URL: &str =
     "https://api.twitter.com/graphql/kPLTRmMnzbPTv70___D06w/TweetResultByRestId";
 
-/// GraphQL `features` flag set that the pinned query id expects. Copied verbatim
-/// from the reference; the endpoint rejects the request if a flag is missing.
+/// GraphQL `features` 标志集，固定查询 ID 期望的值。从参考实现逐字复制；
+/// 端点会在缺少标志时拒绝请求。
 const FEATURES: &str = r#"{"creator_subscriptions_tweet_preview_api_enabled":true,"communities_web_enable_tweet_community_results_fetch":true,"c9s_tweet_anatomy_moderator_badge_enabled":true,"tweetypie_unmention_optimization_enabled":true,"responsive_web_edit_tweet_api_enabled":true,"graphql_is_translatable_rweb_tweet_is_translatable_enabled":true,"view_counts_everywhere_api_enabled":true,"longform_notetweets_consumption_enabled":true,"responsive_web_twitter_article_tweet_consumption_enabled":true,"tweet_awards_web_tipping_enabled":false,"creator_subscriptions_quote_tweet_preview_enabled":false,"freedom_of_speech_not_reach_fetch_enabled":true,"standardized_nudges_misinfo":true,"tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled":true,"tweet_with_visibility_results_prefer_gql_media_interstitial_enabled":false,"rweb_video_timestamps_enabled":true,"longform_notetweets_rich_text_read_enabled":true,"longform_notetweets_inline_media_enabled":true,"rweb_tipjar_consumption_enabled":true,"responsive_web_graphql_exclude_directive_enabled":true,"verified_phone_label_enabled":false,"responsive_web_graphql_skip_user_profile_image_extensions_enabled":false,"responsive_web_graphql_timeline_navigation_enabled":true,"responsive_web_enhance_cards_enabled":false}"#;
 
 const FIELD_TOGGLES: &str = r#"{"withArticleRichContentState":true,"withArticlePlainText":false}"#;
 
-/// Resolver for `twitter.com` / `x.com` / `fixupx.com` status links.
+/// 解析 `twitter.com` / `x.com` / `fixupx.com` 的状态链接。
 pub struct TwitterResolver;
 
 impl TwitterResolver {
@@ -36,7 +35,7 @@ impl TwitterResolver {
         Self
     }
 
-    /// Extract the numeric tweet id from any `.../status/<id>` URL.
+    /// 从任何 `.../status/<id>` URL 中提取数字推文 ID。
     fn tweet_id(url: &str) -> Option<String> {
         let rest = url.split("status/").nth(1)?;
         let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
@@ -47,7 +46,7 @@ impl TwitterResolver {
         }
     }
 
-    /// Request a short-lived guest token used for anonymous reads.
+    /// 请求用于匿名读取的短时访客 token。
     async fn guest_token(&self, client: &reqwest::Client) -> Result<String, ResolveError> {
         let response = client
             .post(GUEST_ACTIVATE_URL)
@@ -87,8 +86,8 @@ impl TwitterResolver {
         Ok(response.json().await?)
     }
 
-    /// Turn the GraphQL response into a [`ResolvedPost`]. Mirrors
-    /// `Twitter.parse` in the reference.
+    /// 将 GraphQL 响应转换为 [`ResolvedPost`]。镜像了参考实现中的
+    /// `Twitter.parse`。
     fn parse(&self, source_url: &str, body: &Value) -> Result<ResolvedPost, ResolveError> {
         if let Some(errors) = body.get("errors").and_then(Value::as_array) {
             if let Some(message) = errors
@@ -105,7 +104,7 @@ impl TwitterResolver {
             .filter(|v| !v.is_null())
             .ok_or_else(|| ResolveError::Upstream("帖子或用户不存在".into()))?;
 
-        // A visibility wrapper nests the real tweet under `tweet`.
+        // 可见性包装在 `tweet` 下嵌套了真实的推文。
         let inner = result.get("tweet").unwrap_or(result);
         let tweet_id = inner
             .get("rest_id")
@@ -127,7 +126,7 @@ impl TwitterResolver {
             return Err(ResolveError::Upstream(reason.to_string()));
         };
 
-        // Prefer the long-form note text when present.
+        // 优先使用长格式的笔记文本。
         let full_text = inner
             .pointer("/note_tweet/note_tweet_results/result/text")
             .and_then(Value::as_str)
@@ -249,13 +248,13 @@ impl MediaResolver for TwitterResolver {
     }
 }
 
-/// Append `name=<size>` to a `pbs.twimg.com` image URL to request a variant.
+/// 将 `name=<size>` 追加到 `pbs.twimg.com` 图片 URL 以请求变体。
 fn with_image_name(url: &str, size: &str) -> String {
     let sep = if url.contains('?') { '&' } else { '?' };
     format!("{url}{sep}name={size}")
 }
 
-/// Pick the highest-bitrate `video/mp4` variant URL.
+/// 选择最高比特率的 `video/mp4` 变体 URL。
 fn best_mp4(variants: &[Value]) -> Option<String> {
     variants
         .iter()
@@ -265,8 +264,8 @@ fn best_mp4(variants: &[Value]) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Drop the trailing `https://t.co/...` shortlink Twitter appends when the tweet
-/// carries media (it points back at the media, not real content).
+/// 当推文携带媒体时（指向媒体本身而非真实内容），删除 Twitter 追加的尾部
+/// `https://t.co/...` 短链接。
 fn strip_trailing_tco(text: &str, has_media: bool) -> String {
     if !has_media {
         return text.to_string();

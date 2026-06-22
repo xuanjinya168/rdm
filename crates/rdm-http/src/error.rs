@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Errors raised by the HTTP layer.
+/// HTTP 层抛出的错误。
 #[derive(Debug, Error)]
 pub enum HttpError {
     #[error("No download provider supports URL: {0}")]

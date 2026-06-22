@@ -1,14 +1,14 @@
 use thiserror::Error;
 
-/// Errors that can end a download run.
+/// 终结一次下载运行的错误。
 #[derive(Debug, Error)]
 pub enum EngineError {
-    /// A pause or cancel unwound the run; not a real failure.
+    /// 暂停或取消使运行提前结束；并非真正的失败。
     #[error("download interrupted")]
     Interrupted,
 
-    /// A non-retryable, descriptive download problem (size mismatch, bad
-    /// checksum, a server that stopped honoring ranges, exhausted retries).
+    /// 不可重试的、有具体描述的下载问题（大小不匹配、校验和错误、
+    /// 服务器不再支持 Range、重试次数耗尽等）。
     #[error("{0}")]
     Download(String),
 
@@ -26,8 +26,8 @@ pub enum EngineError {
 }
 
 impl EngineError {
-    /// Whether a transfer error of this kind is worth retrying, mirroring the
-    /// Python engine's `(HTTPError, OSError, ValueError)` retry filter.
+    /// 该错误是否值得重试，对应 Python 引擎对
+    /// `(HTTPError, OSError, ValueError)` 的重试过滤规则。
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,

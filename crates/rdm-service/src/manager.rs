@@ -1,4 +1,4 @@
-//! The download manager and its scheduler.
+//! 下载管理器及其调度器。
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,7 +15,7 @@ use rdm_storage::DownloadDatabase;
 
 use crate::error::ServiceError;
 
-/// Notified on every progress update with a task snapshot and speed (bytes/s).
+/// 每次进度更新都会通知，传入任务快照与速度（字节/秒）。
 pub type ManagerListener = Arc<dyn Fn(DownloadTask, f64) + Send + Sync>;
 
 const SCHEDULER_TICK: Duration = Duration::from_millis(200);
@@ -33,19 +33,19 @@ struct ManagerInner {
     limiter: Arc<RateLimiter>,
     providers: Arc<ProviderRegistry>,
     state: Mutex<ManagerState>,
-    /// Wakes the scheduler when the task set or a setting changes.
+    /// 任务集或设置变更时唤醒调度器。
     wakeup: Notify,
 }
 
-/// Owns the download queue and schedules work up to the active limit.
+/// 持有下载队列并在活跃数上限内调度工作的管理器。
 #[derive(Clone)]
 pub struct DownloadManager {
     inner: Arc<ManagerInner>,
 }
 
 impl DownloadManager {
-    /// Build a manager over `database`/`settings`, restoring persisted tasks and
-    /// starting the background scheduler. Must be called within a tokio runtime.
+    /// 在 `database`/`settings` 上构建管理器，恢复持久化的任务并启动后台调度器。
+    /// 必须在 tokio 运行时内调用。
     pub fn new(
         database: Arc<DownloadDatabase>,
         settings: AppSettings,
@@ -75,29 +75,29 @@ impl DownloadManager {
         Ok(Self { inner })
     }
 
-    /// Register a progress listener.
+    /// 注册进度监听器。
     pub fn add_listener(&self, listener: ManagerListener) {
         self.inner.state().listeners.push(listener);
     }
 
-    /// All tasks, newest first.
+    /// 全部任务，按创建时间降序排列。
     pub fn all_tasks(&self) -> Vec<DownloadTask> {
         let mut tasks: Vec<DownloadTask> = self.inner.state().tasks.values().cloned().collect();
         tasks.sort_by(|a, b| b.created_at.total_cmp(&a.created_at));
         tasks
     }
 
-    /// A snapshot of one task, if it exists.
+    /// 单个任务的快照（若存在）。
     pub fn get_task(&self, task_id: &str) -> Option<DownloadTask> {
         self.inner.state().tasks.get(task_id).cloned()
     }
 
-    /// The current application settings.
+    /// 当前应用程序设置。
     pub fn settings(&self) -> AppSettings {
         self.inner.state().settings.clone()
     }
 
-    /// Queue a new download.
+    /// 排队一个新下载。
     pub fn add_download(
         &self,
         url: &str,
@@ -131,7 +131,7 @@ impl DownloadManager {
         Ok(task)
     }
 
-    /// Re-queue a task (no-op if completed or already running).
+    /// 重新排队任务（已完成或已在运行时为空操作）。
     pub fn start(&self, task_id: &str) -> Result<(), ServiceError> {
         let snapshot = {
             let mut state = self.inner.state();
@@ -157,7 +157,7 @@ impl DownloadManager {
         Ok(())
     }
 
-    /// Pause a running download, or mark a still-queued one paused.
+    /// 暂停正在运行的下载，或将仍在排队的任务标记为暂停。
     pub fn pause(&self, task_id: &str) -> Result<(), ServiceError> {
         let mut snapshot: Option<DownloadTask> = None;
         let engine = {
@@ -188,7 +188,7 @@ impl DownloadManager {
         Ok(())
     }
 
-    /// Cancel a download, whether running or merely queued.
+    /// 取消下载（无论运行中还是排队中）。
     pub fn cancel(&self, task_id: &str) -> Result<(), ServiceError> {
         let mut snapshot: Option<DownloadTask> = None;
         let engine = {
@@ -217,8 +217,8 @@ impl DownloadManager {
         Ok(())
     }
 
-    /// Remove a task; returns false if it is currently downloading. With
-    /// `delete_file`, its output and `.part` files are removed too.
+    /// 移除任务；当前正在下载时返回 false。若 `delete_file` 为 true，
+    /// 同时删除其输出文件和 `.part` 文件。
     pub fn delete(&self, task_id: &str, delete_file: bool) -> Result<bool, ServiceError> {
         let mut state = self.inner.state();
         if state.engines.contains_key(task_id) {
@@ -240,7 +240,7 @@ impl DownloadManager {
         Ok(true)
     }
 
-    /// Replace settings and apply the new speed limit live.
+    /// 替换设置并实时应用新的速度限制。
     pub fn update_settings(&self, settings: AppSettings) {
         {
             let mut state = self.inner.state();
@@ -252,8 +252,7 @@ impl DownloadManager {
         self.inner.wakeup.notify_one();
     }
 
-    /// Stop scheduling, pause every running download and wait for them to wind
-    /// down. Idempotent.
+    /// 停止调度，暂停所有运行中的下载并等待它们结束。幂等操作。
     pub async fn shutdown(&self) {
         {
             let mut state = self.inner.state();
@@ -292,9 +291,8 @@ impl ManagerInner {
         }
     }
 
-    /// Build the engine progress callback: fold each snapshot into the task
-    /// table, wake the scheduler when a task leaves the active set, and fan out
-    /// to listeners.
+    /// 构建引擎进度回调：将每个快照折叠到任务表中，
+    /// 任务离开活跃集时唤醒调度器，并扇出给监听器。
     fn make_callback(self: &Arc<Self>) -> UpdateCallback {
         let inner = Arc::clone(self);
         Arc::new(move |snapshot: DownloadTask, speed: f64| {
@@ -311,8 +309,7 @@ impl ManagerInner {
         })
     }
 
-    /// Spawn an engine for `task`, tracking its handle and reaping it on
-    /// completion.
+    /// 为 `task` 派生一个引擎，跟踪其句柄并在完成时回收。
     fn launch(self: &Arc<Self>, task: DownloadTask) {
         let (retry_count, connections, proxy) = {
             let state = self.state();
@@ -351,10 +348,9 @@ impl ManagerInner {
     }
 }
 
-/// Translate the proxy portion of [`AppSettings`] into a [`ProxyConfig`].
+/// 将 [`AppSettings`] 的代理部分转换为 [`ProxyConfig`]。
 ///
-/// When proxying is disabled the returned config is inactive, so the client
-/// falls back to reqwest's defaults.
+/// 代理未启用时返回未激活的配置，使客户端回退到 reqwest 的默认值。
 fn proxy_from_settings(settings: &AppSettings) -> ProxyConfig {
     if settings.proxy_enabled {
         ProxyConfig {
@@ -487,7 +483,7 @@ mod tests {
     }
 
     fn manager(dir: &Path) -> DownloadManager {
-        // Bypass any host HTTP_PROXY for the loopback test server.
+        // 为回环测试服务器绕过任何主机 HTTP_PROXY。
         std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
         let database = Arc::new(DownloadDatabase::open(Some(dir.join("downloads.db"))).unwrap());
         let settings = AppSettings {
@@ -497,9 +493,8 @@ mod tests {
         DownloadManager::new(database, settings, Arc::new(ProviderRegistry::default())).unwrap()
     }
 
-    /// A manager that never auto-starts downloads (`max_active_downloads = 0`),
-    /// so a queued task's lifecycle is driven deterministically without the
-    /// network.
+    /// 一个永不自动开始下载的管理器（`max_active_downloads = 0`），
+    /// 便于在没有网络的情况下确定性地驱动排队任务的生命周期。
     fn idle_manager(dir: &Path) -> DownloadManager {
         let database = Arc::new(DownloadDatabase::open(Some(dir.join("d.db"))).unwrap());
         let settings = AppSettings {

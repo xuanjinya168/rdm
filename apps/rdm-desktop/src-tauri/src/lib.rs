@@ -1,11 +1,9 @@
-//! Tauri backend for the RDM desktop app.
+//! RDM 桌面应用的 Tauri 后端。
 //!
-//! Command layer over [`rdm_service::DownloadManager`] plus desktop
-//! integration ported from the Python app: single-instance + URL handoff,
-//! system tray with close-to-tray, graceful shutdown on quit, and opening a
-//! task's folder. The frontend subscribes to `task://update` for live progress
-//! and to `rdm://open-url` / `rdm://new-download` for tray/second-instance
-//! triggers.
+//! 基于 [`rdm_service::DownloadManager`] 的命令层，以及从 Python 应用移植的
+//! 桌面集成功能：单实例 + URL 传递、系统托盘（支持关闭到托盘）、优雅退出、
+//! 打开任务文件夹。前端订阅 `task://update` 获取实时进度，
+//! 订阅 `rdm://open-url` / `rdm://new-download` 响应托盘/第二实例触发。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -23,24 +21,22 @@ use rdm_resolver::{ProxyConfig, ResolvedPost, ResolverRegistry};
 use rdm_service::DownloadManager;
 use rdm_storage::DownloadDatabase;
 
-/// Shared application state managed by Tauri.
+/// Tauri 管理的共享应用状态。
 struct AppState {
     manager: DownloadManager,
     settings_store: SettingsStore,
-    /// URL supplied to the first process on launch. The frontend takes it
-    /// after its event listeners are registered, avoiding a startup race.
+    /// 启动时传递给首个进程的 URL。前端在注册事件监听器后获取，
+    /// 避免启动竞态。
     launch_url: Mutex<Option<String>>,
-    /// Resolves social-media / web post URLs into downloadable media items.
-    /// Held behind a mutex so it can be rebuilt when the proxy setting changes
-    /// without restarting the app.
+    /// 将社交媒体/网页帖子 URL 解析为可下载的媒体项。
+    /// 使用互斥锁保护，以便在代理设置变更时可以重建而无需重启应用。
     resolvers: Mutex<Arc<ResolverRegistry>>,
-    /// Set when the user really wants to quit, so the close handler exits
-    /// instead of hiding to the tray.
+    /// 用户真正想要退出时设置，让关闭处理程序退出而非隐藏到托盘。
     force_quit: AtomicBool,
 }
 
-/// Translate the proxy portion of [`AppSettings`] into a resolver
-/// [`ProxyConfig`]; an inactive config when proxying is disabled.
+/// 将 [`AppSettings`] 的代理部分转换为解析器的 [`ProxyConfig`]；
+/// 代理禁用时返回不激活的配置。
 fn proxy_from_settings(settings: &AppSettings) -> ProxyConfig {
     if settings.proxy_enabled {
         ProxyConfig {
@@ -53,9 +49,9 @@ fn proxy_from_settings(settings: &AppSettings) -> ProxyConfig {
     }
 }
 
-/// Rebuild the resolver registry from `settings`, replacing the one in state.
-/// Logged on failure rather than propagated: a broken registry just means
-/// media resolution is unavailable while downloads keep working.
+/// 根据 `settings` 重建解析器注册表，替换状态中的现有实例。
+/// 失败时仅记录日志而不向上传播：损坏的注册表仅意味着媒体解析功能
+/// 不可用，但下载功能仍可正常工作。
 fn rebuild_resolvers(state: &AppState, settings: &AppSettings) {
     match ResolverRegistry::new(proxy_from_settings(settings)) {
         Ok(registry) => {
@@ -65,7 +61,7 @@ fn rebuild_resolvers(state: &AppState, settings: &AppSettings) {
     }
 }
 
-/// Payload pushed to the frontend on each progress update.
+/// 每次进度更新时推送到前端的数据载荷。
 #[derive(Serialize, Clone)]
 struct ProgressPayload {
     task: DownloadTask,
@@ -136,8 +132,8 @@ fn delete_task(state: State<'_, AppState>, id: String, delete_file: bool) -> Res
 
 #[tauri::command]
 fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings, String> {
-    // The resolver client is built once and held behind a mutex; rebuild it
-    // only when the proxy actually changes, since downloads read settings live.
+    // 解析器客户端仅构建一次并由互斥锁保护；仅在代理实际发生变化时才重建，
+    // 因为下载会实时读取设置。
     let old_proxy = proxy_from_settings(&state.manager.settings());
     let validated = state
         .settings_store
@@ -150,10 +146,10 @@ fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<Ap
     Ok(validated)
 }
 
-/// Resolve a social-media / web post URL into its downloadable media items.
+/// 将社交媒体/网页帖子 URL 解析为可下载的媒体项。
 ///
-/// The registry is cloned out of state before the first `.await` so the command
-/// future does not borrow `State` across suspension points.
+/// 注册表在首次 `.await` 前从状态中克隆，使命令 future 不会
+/// 跨越挂起点借用 `State`。
 #[tauri::command]
 async fn resolve_media(state: State<'_, AppState>, url: String) -> Result<ResolvedPost, String> {
     let resolvers = state.resolvers.lock().unwrap().clone();
@@ -163,8 +159,7 @@ async fn resolve_media(state: State<'_, AppState>, url: String) -> Result<Resolv
         .map_err(|error| error.to_string())
 }
 
-/// Reveal a task's output file, falling back to its destination directory
-/// while the filename is unknown or the file does not exist yet.
+/// 显示任务的输出文件，若文件名未知或文件尚不存在则回退到目标目录。
 #[tauri::command]
 fn reveal_task_file(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
@@ -187,12 +182,12 @@ fn reveal_task_file(app: AppHandle, state: State<'_, AppState>, id: String) -> R
     }
 }
 
-/// The first http/https URL among CLI args, mirroring Python `first_http_url`.
+/// CLI 参数中的首个 http/https URL，对应 Python 的 `first_http_url`。
 fn first_http_url(args: &[String]) -> Option<String> {
     args.iter().find(|arg| is_http_url(arg)).cloned()
 }
 
-/// Reveal and focus the main window.
+/// 显示并聚焦主窗口。
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -201,7 +196,7 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-/// Begin a graceful quit: pause/persist in-flight downloads, then exit.
+/// 开始优雅退出：暂停/持久化进行中的下载，然后退出。
 fn quit_app(app: &AppHandle) {
     let manager = {
         let state = app.state::<AppState>();
@@ -253,13 +248,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Build and run the Tauri application.
+/// 构建并运行 Tauri 应用。
 pub fn run() {
     let mut builder = tauri::Builder::default();
 
-    // Single-instance must be registered first: a second launch hands its URL
-    // to the running instance (which surfaces the window and opens the add
-    // dialog) and then exits.
+    // 单实例必须先注册：第二次启动会将 URL 传递给运行中的实例
+    //（该实例会显示窗口并打开添加对话框），然后退出。
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -271,9 +265,9 @@ pub fn run() {
     }
 
     builder
-        // Rotating log file in the app log dir: when `rdm.log` exceeds the
-        // size cap it is rotated and only the most recent backup is kept,
-        // so disk use stays bounded. Also mirrors to stdout for `app:dev`.
+        // 应用日志目录中的轮转日志文件：当 `rdm.log` 超过大小上限时会轮转，
+        // 并仅保留最近的备份，因此磁盘使用保持受限。同时镜像到 stdout
+        // 以便 `app:dev` 使用。
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -297,9 +291,9 @@ pub fn run() {
             let settings = settings_store.load();
             let launch_url = first_http_url(&std::env::args().collect::<Vec<_>>());
 
-            // DownloadManager spawns its scheduler with tokio::spawn, so it must
-            // be constructed inside a runtime context; Tauri's async runtime is
-            // tokio, and the spawned scheduler outlives this block.
+            // DownloadManager 通过 tokio::spawn 启动其调度器，因此必须在运行时
+            // 上下文内构造；Tauri 的异步运行时是 tokio，生成的调度器存活时间
+            // 超出此块。
             let manager = tauri::async_runtime::block_on(async {
                 DownloadManager::new(
                     database,
@@ -336,11 +330,11 @@ pub fn run() {
                 let state = window.state::<AppState>();
                 let minimize = state.manager.settings().minimize_to_tray;
                 if minimize && !state.force_quit.load(Ordering::SeqCst) {
-                    // Keep downloading in the background.
+                    // 在后台继续下载。
                     api.prevent_close();
                     let _ = window.hide();
                 } else {
-                    // Exit only after engines have wound down.
+                    // 仅在引擎结束后退出。
                     api.prevent_close();
                     quit_app(window.app_handle());
                 }

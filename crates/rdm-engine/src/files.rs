@@ -1,9 +1,8 @@
-//! `.part` file reservation and publication. Port of the Python
-//! `downloader.files` module.
+//! `.part` 文件的预留与发布。从 Python 的 `downloader.files` 模块迁移而来。
 //!
-//! Output names are claimed process-wide through their `.part` file so two
-//! concurrent downloads never target the same path, and the finished bytes are
-//! moved into place without ever overwriting a file that appeared meanwhile.
+//! 输出文件名通过 `.part` 文件在整个进程内进行抢占，使得两个并发
+//! 下载永远不会指向同一路径；最终的文件会在移动到位时避免覆盖
+//! 中途出现的同名文件。
 
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -12,13 +11,12 @@ use std::sync::Mutex;
 
 use rdm_domain::DownloadTask;
 
-/// Serializes name selection across all download workers, mirroring the
-/// module-level lock in the Python implementation.
+/// 在所有下载工作线程之间串行化文件名选择，对应 Python 实现中的模块级锁。
 static PATH_LOCK: Mutex<()> = Mutex::new(());
 
 const MAX_ATTEMPTS: u32 = 10_000;
 
-/// The `<name>.part` sibling of an output path.
+/// 输出路径对应的 `<name>.part` 兄弟路径。
 fn part_sibling(output_path: &Path) -> PathBuf {
     let name = output_path
         .file_name()
@@ -27,8 +25,8 @@ fn part_sibling(output_path: &Path) -> PathBuf {
     output_path.with_file_name(format!("{name}.part"))
 }
 
-/// Split a requested filename into its stem and dotted suffix, e.g.
-/// `"file.bin"` -> `("file", ".bin")`, `"archive.tar.gz"` -> `("archive.tar", ".gz")`.
+/// 将请求的文件名拆分为 stem 与带点的后缀，例如
+/// `"file.bin"` -> `("file", ".bin")`，`"archive.tar.gz"` -> `("archive.tar", ".gz")`。
 fn stem_and_suffix(requested: &str) -> (String, String) {
     let path = Path::new(requested);
     let stem = path
@@ -56,8 +54,8 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Atomically reserve a process-wide output name through its part file,
-/// returning the chosen name and the reserved (now-existing, empty) part path.
+/// 通过 `.part` 文件在进程内原子地预留一个输出文件名，
+/// 返回最终选定的文件名以及预留的（当前已存在、为空的）`.part` 路径。
 pub fn reserve_part_file(destination: &Path, requested: &str) -> io::Result<(String, PathBuf)> {
     fs::create_dir_all(destination)?;
     let (stem, suffix) = stem_and_suffix(requested);
@@ -79,8 +77,8 @@ pub fn reserve_part_file(destination: &Path, requested: &str) -> io::Result<(Str
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error),
         }
-        // The output may have raced into existence between the check above and
-        // claiming the part file; drop our reservation and try the next name.
+        // 输出文件可能在上述检查和占位 part 文件之间被竞态创建；
+        // 丢弃我们的预留并尝试下一个名字。
         if output_path.exists() {
             let _ = fs::remove_file(&part_path);
             continue;
@@ -93,9 +91,8 @@ pub fn reserve_part_file(destination: &Path, requested: &str) -> io::Result<(Str
     ))
 }
 
-/// Publish a task's part file as its final output without overwriting an
-/// existing file, advancing `task.filename` if a later collision forces a new
-/// name.
+/// 将任务的 `.part` 文件发布为最终输出，且不会覆盖已有文件；
+/// 若在后续循环中遇到名字冲突，会推进 `task.filename` 选用新的名字。
 pub fn publish_part_file(task: &mut DownloadTask) -> io::Result<()> {
     let _guard = lock();
     let mut part_path = task.part_path();
@@ -115,8 +112,7 @@ pub fn publish_part_file(task: &mut DownloadTask) -> io::Result<()> {
             part_path = candidate_part;
             task.filename = name;
         }
-        // Claim the output name with an empty placeholder so an external file
-        // appearing here is detected rather than clobbered.
+        // 用空占位符抢占输出名，以便检测此处出现的外部文件而非将其覆盖。
         match OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -189,7 +185,7 @@ mod tests {
         let (name, part) = reserve_part_file(dir.path(), &task.filename).unwrap();
         task.filename = name;
         fs::write(&part, b"downloaded").unwrap();
-        // An unrelated file lands on the chosen output name before publishing.
+        // 一个无关文件在发布前落在了选定的输出名上。
         fs::write(task.output_path(), b"external").unwrap();
 
         publish_part_file(&mut task).unwrap();

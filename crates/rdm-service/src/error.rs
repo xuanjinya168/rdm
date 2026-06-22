@@ -1,12 +1,12 @@
 use thiserror::Error;
 
-/// Errors surfaced by the download manager.
+/// 下载管理器抛出的错误。
 #[derive(Debug, Error)]
 pub enum ServiceError {
-    #[error("Download manager is shutting down")]
+    #[error("下载管理器正在关闭")]
     ShuttingDown,
 
-    #[error("task not found: {0}")]
+    #[error("任务不存在: {0}")]
     NotFound(String),
 
     #[error(transparent)]

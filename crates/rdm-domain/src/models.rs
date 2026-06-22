@@ -1,4 +1,4 @@
-//! Task and segment domain model. Port of the Python `models` module.
+//! 任务与分段的领域模型。从 Python `models` 模块迁移而来。
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,8 +9,8 @@ use uuid::Uuid;
 use crate::error::CoreError;
 use crate::validation::normalize_sha256;
 
-/// Lifecycle state of a download. Serializes to the same lowercase strings
-/// the Python `TaskStatus` used, so existing databases stay readable.
+/// 下载任务的生命周期状态。序列化为与 Python 版 `TaskStatus`
+/// 一致的小写字符串，便于直接读取历史数据库。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
@@ -25,7 +25,7 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
-    /// Statuses that occupy an active worker slot.
+    /// 占用活动工作线程槽位时返回 true。
     pub fn is_active(self) -> bool {
         matches!(
             self,
@@ -33,7 +33,7 @@ impl TaskStatus {
         )
     }
 
-    /// The lowercase token persisted in the database.
+    /// 对应在数据库中持久化存储的小写字符串。
     pub fn as_str(self) -> &'static str {
         match self {
             TaskStatus::Queued => "queued",
@@ -47,7 +47,7 @@ impl TaskStatus {
         }
     }
 
-    /// Parse a persisted token, or `None` if it is not a known status.
+    /// 解析持久化的字符串状态；无法识别时返回 `None`。
     pub fn from_db_str(value: &str) -> Option<Self> {
         Some(match value {
             "queued" => TaskStatus::Queued,
@@ -63,8 +63,8 @@ impl TaskStatus {
     }
 }
 
-/// One contiguous byte range of a download. `end` is inclusive; `None` means
-/// the length is unknown (non-resumable, single-stream download).
+/// 下载中一段连续的字节区间。`end` 为包含端点；为 `None` 表示
+/// 长度未知（无法续传的单连接下载）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Segment {
     pub task_id: String,
@@ -86,23 +86,23 @@ impl Segment {
         }
     }
 
-    /// Absolute offset of the next byte to request.
+    /// 下一字节请求的绝对偏移量。
     pub fn next_byte(&self) -> u64 {
         self.start + self.downloaded
     }
 
-    /// Total length of the range, if known.
+    /// 该区间的总长度（已知时），否则为 `None`。
     pub fn size(&self) -> Option<u64> {
         self.end.map(|end| end - self.start + 1)
     }
 
-    /// True once every byte of a known-length range has been written.
+    /// 当已知长度的区间内每个字节都已写入时返回 true。
     pub fn complete(&self) -> bool {
         self.size().is_some_and(|size| self.downloaded >= size)
     }
 }
 
-/// A download job and everything needed to resume or verify it.
+/// 一个下载任务及其续传 / 校验所需的全部信息。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DownloadTask {
     pub id: String,
@@ -133,8 +133,8 @@ pub struct DownloadTask {
 }
 
 impl DownloadTask {
-    /// Build a fresh queued task, validating the URL and optional checksum and
-    /// clamping the connection count to the supported 1..=32 range.
+    /// 构造一个新的排队任务：校验 URL 与可选的校验和，
+    /// 并将并发连接数限制在 1..=32 之间。
     pub fn create(
         url: &str,
         destination: impl AsRef<Path>,
@@ -168,12 +168,12 @@ impl DownloadTask {
         })
     }
 
-    /// Final path of the completed file.
+    /// 下载完成后文件的最终路径。
     pub fn output_path(&self) -> PathBuf {
         Path::new(&self.destination).join(&self.filename)
     }
 
-    /// Path of the in-progress `.part` file.
+    /// 正在下载的 `.part` 临时文件路径。
     pub fn part_path(&self) -> PathBuf {
         let output = self.output_path();
         let name = output
@@ -183,7 +183,7 @@ impl DownloadTask {
         output.with_file_name(format!("{name}.part"))
     }
 
-    /// Completion ratio in 0.0..=1.0, or 0.0 when the size is unknown.
+    /// 完成比例，范围 0.0..=1.0；当文件大小未知时为 0.0。
     pub fn progress(&self) -> f64 {
         match self.total_size {
             Some(total) if total > 0 => (self.downloaded as f64 / total as f64).min(1.0),

@@ -1,8 +1,8 @@
-//! Download providers. Port of the Python `providers` package.
+//! 下载 Provider。从 Python 的 `providers` 包迁移而来。
 //!
-//! A provider turns a task's stored URL into the URL and headers actually used
-//! for one engine run — the extension point for authenticated or signed
-//! sources. Plain HTTP/HTTPS is handled by the built-in [`HttpDownloadProvider`].
+//! Provider 将任务中存储的 URL 转化为一次引擎执行实际使用的
+//! URL 与请求头 —— 是鉴权或签名源的扩展点。普通的 HTTP/HTTPS
+//! 由内置的 [`HttpDownloadProvider`] 处理。
 
 use rdm_domain::DownloadTask;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, IF_RANGE, RANGE};
@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::error::HttpError;
 
-/// A provider-resolved URL and request headers for one download run.
+/// 一次下载运行中由 Provider 解析出的 URL 与请求头。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreparedDownload {
     pub url: String,
@@ -18,7 +18,7 @@ pub struct PreparedDownload {
 }
 
 impl PreparedDownload {
-    /// A prepared download for `url` with no extra headers.
+    /// 为 `url` 构造一个没有额外请求头的 PreparedDownload。
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -26,8 +26,8 @@ impl PreparedDownload {
         }
     }
 
-    /// Validate provider headers and convert them to the representation used by
-    /// reqwest. Range and encoding headers remain owned by the engine.
+    /// 校验 Provider 请求头并转换为 reqwest 所需的表示。
+    /// Range 与编码相关的请求头仍由引擎统一管理。
     pub fn request_headers(&self) -> Result<HeaderMap, HttpError> {
         let mut headers = HeaderMap::new();
         for (raw_name, raw_value) in &self.headers {
@@ -44,15 +44,14 @@ impl PreparedDownload {
     }
 }
 
-/// Resolves a task into a [`PreparedDownload`]. Implementations must be
-/// shareable across worker threads.
+/// 将一个任务解析为 [`PreparedDownload`]。实现必须可跨工作线程共享。
 pub trait DownloadProvider: Send + Sync {
     fn name(&self) -> &str;
     fn can_handle(&self, url: &str) -> bool;
     fn prepare(&self, task: &DownloadTask) -> Result<PreparedDownload, HttpError>;
 }
 
-/// The built-in provider for plain `http`/`https` URLs.
+/// 内置的 Provider，用于普通的 `http`/`https` URL。
 pub struct HttpDownloadProvider;
 
 impl DownloadProvider for HttpDownloadProvider {
@@ -71,7 +70,7 @@ impl DownloadProvider for HttpDownloadProvider {
     }
 }
 
-/// An ordered list of providers; the first one that can handle a URL wins.
+/// 有序的 Provider 列表；首个能处理该 URL 的 Provider 胜出。
 pub struct ProviderRegistry {
     providers: Vec<Box<dyn DownloadProvider>>,
 }
@@ -85,12 +84,12 @@ impl Default for ProviderRegistry {
 }
 
 impl ProviderRegistry {
-    /// A registry with an explicit provider list.
+    /// 使用显式 Provider 列表构造注册表。
     pub fn new(providers: Vec<Box<dyn DownloadProvider>>) -> Self {
         Self { providers }
     }
 
-    /// Add a provider, at the front (so it takes precedence) when `first`.
+    /// 注册一个 Provider。当 `first` 为 true 时插入到列表前端（拥有更高优先级）。
     pub fn register(&mut self, provider: Box<dyn DownloadProvider>, first: bool) {
         if first {
             self.providers.insert(0, provider);
@@ -99,7 +98,7 @@ impl ProviderRegistry {
         }
     }
 
-    /// Resolve `task` with the first matching provider.
+    /// 使用首个匹配的 Provider 解析 `task`。
     pub fn prepare(&self, task: &DownloadTask) -> Result<PreparedDownload, HttpError> {
         for provider in &self.providers {
             if provider.can_handle(&task.url) {

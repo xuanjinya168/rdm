@@ -1,4 +1,4 @@
-//! URL probing. Port of the Python `downloader.probe` module.
+//! URL 探测。从 Python 的 `downloader.probe` 模块迁移而来。
 
 use percent_encoding::percent_decode_str;
 use rdm_domain::validation::sanitize_filename;
@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::error::HttpError;
 
-/// What a probe learned about a download target.
+/// 一次探测所获取到的下载目标信息。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbeResult {
     pub final_url: String,
@@ -21,7 +21,7 @@ pub struct ProbeResult {
     pub last_modified: Option<String>,
 }
 
-/// A parsed HTTP `Content-Range` header.
+/// 已解析的 HTTP `Content-Range` 响应头。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentRange {
     Bytes {
@@ -34,12 +34,12 @@ pub enum ContentRange {
     },
 }
 
-/// Probe `url` to discover its size, range support and validators.
+/// 探测 `url`，获取其大小、Range 支持情况以及校验信息。
 ///
-/// A best-effort `HEAD` collects headers some servers only expose there, then a
-/// single-byte ranged `GET` settles the questions that matter: a `206` proves
-/// range support, a `416` with `Content-Range: */0` means an empty file, and a
-/// `200` falls back to `Content-Length`.
+/// 先尽力发送 `HEAD` 收集某些服务器仅在响应头中暴露的元数据，
+/// 再发送单字节范围 `GET` 来确定关键问题：`206` 证明支持 Range，
+/// 携带 `Content-Range: */0` 的 `416` 表示空文件，
+/// 而 `200` 则回退到 `Content-Length` 作为大小。
 pub async fn probe_url(
     client: &reqwest::Client,
     url: &str,
@@ -48,8 +48,8 @@ pub async fn probe_url(
     let mut head_headers: Option<HeaderMap> = None;
     let mut final_url = url.to_string();
 
-    // HEAD is advisory: many servers reject it, so any failure or error status
-    // is ignored and the ranged GET below remains the source of truth.
+    // HEAD 只是参考：许多服务器会拒绝它，因此任何失败或错误状态
+    // 都会被忽略，后续的 Range GET 仍作为真实来源。
     if let Ok(response) = client
         .head(url)
         .headers(request_headers.clone())
@@ -88,7 +88,7 @@ pub async fn probe_url(
         total_size = header_str(&get_headers, &CONTENT_LENGTH).and_then(|s| s.parse::<u64>().ok());
     }
 
-    // Prefer the GET response header, falling back to whatever HEAD reported.
+    // 优先使用 GET 响应头，回退到 HEAD 报告的值。
     let pick = |name: &HeaderName| -> Option<String> {
         header_str(&get_headers, name)
             .or_else(|| head_headers.as_ref().and_then(|h| header_str(h, name)))
@@ -115,8 +115,8 @@ fn percent_decode(value: &str) -> String {
     percent_decode_str(value).decode_utf8_lossy().into_owned()
 }
 
-/// Extract the total length from a `Content-Range` value, or `None` when it is
-/// absent, unknown (`*`) or unparseable.
+/// 从 `Content-Range` 字符串中解析总长度；若该值缺失、
+/// 未知（`*`）或无法解析则返回 `None`。
 pub fn parse_content_range(value: &str) -> Option<ContentRange> {
     let (unit, range) = value.trim().split_once(char::is_whitespace)?;
     if !unit.eq_ignore_ascii_case("bytes") {
@@ -145,8 +145,8 @@ pub(crate) fn size_from_content_range(value: Option<&str>) -> Option<u64> {
     }
 }
 
-/// Decide the output filename from `Content-Disposition`, falling back to the
-/// URL path's last component, always percent-decoded and sanitized.
+/// 根据 `Content-Disposition` 决定输出文件名，若无则回退到 URL 路径
+/// 的最后一段；最终结果都会进行百分号解码与 Windows 安全的清理。
 pub(crate) fn filename_from_headers(content_disposition: Option<&str>, url: &str) -> String {
     if let Some(disposition) = content_disposition {
         if let Some(name) = parse_content_disposition_filename(disposition) {
@@ -167,8 +167,8 @@ pub(crate) fn filename_from_headers(content_disposition: Option<&str>, url: &str
     sanitize_filename(name)
 }
 
-/// Parse a filename from a `Content-Disposition` header, preferring the RFC
-/// 5987 `filename*` form over a plain `filename`.
+/// 从 `Content-Disposition` 头中解析文件名，优先使用 RFC 5987
+/// 的 `filename*` 扩展形式，其次是普通的 `filename`。
 fn parse_content_disposition_filename(value: &str) -> Option<String> {
     let mut plain = None;
     let mut extended = None;
@@ -187,7 +187,7 @@ fn parse_content_disposition_filename(value: &str) -> Option<String> {
     extended.or(plain)
 }
 
-/// Decode an RFC 5987 `charset'lang'percent-encoded` extended value.
+/// 解码 RFC 5987 `charset'lang'percent-encoded` 形式的扩展值。
 fn decode_ext_value(raw: &str) -> Option<String> {
     let encoded = raw.splitn(3, '\'').nth(2)?;
     Some(percent_decode(encoded))
@@ -199,8 +199,8 @@ mod tests {
     use wiremock::matchers::{header, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    // The host may export HTTP_PROXY (e.g. a local VPN), which would route the
-    // loopback mock requests through it; bypass it for these tests.
+    // 主机可能暴露了 HTTP_PROXY（例如本地 VPN），这会将回环测试请求
+    // 也路由过去；在这些测试中绕过它。
     fn test_client() -> reqwest::Client {
         reqwest::Client::builder().no_proxy().build().unwrap()
     }
@@ -260,7 +260,7 @@ mod tests {
             ),
             "fixture.bin"
         );
-        // RFC 5987 extended form wins over a plain filename.
+        // RFC 5987 扩展形式优先于普通文件名。
         assert_eq!(
             filename_from_headers(
                 Some("attachment; filename=\"x\"; filename*=UTF-8''na%C3%AFve.txt"),

@@ -1,7 +1,7 @@
-//! Small URL helpers shared by resolvers.
+//! 解析器共享的小型 URL 辅助函数。
 
-/// Extension of the path component of `url`, lower-cased, falling back to
-/// `default` when the path has no usable extension.
+/// 取 `url` 路径部分的扩展名（小写）；若路径中没有可用扩展名，
+/// 则回退到 `default`。
 pub fn url_ext(url: &str, default: &str) -> String {
     let path = url.split(['?', '#']).next().unwrap_or(url);
     path.rsplit('/')

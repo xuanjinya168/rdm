@@ -1,23 +1,23 @@
-//! URL, checksum and filename validation. Port of the Python `validation`
-//! module, keeping the same Windows-oriented rules.
+//! URL、校验和、文件名校验。从 Python `validation` 模块迁移而来，
+//! 保留相同的 Windows 平台规则。
 
 use url::Url;
 
 use crate::error::CoreError;
 
-/// Characters Windows forbids in a file name, plus the C0 control range.
+/// Windows 文件名中禁止使用的字符，以及 C0 控制字符范围。
 fn is_invalid_filename_char(c: char) -> bool {
     matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || (c as u32) <= 0x1f
 }
 
-/// Device names Windows reserves regardless of extension.
+/// Windows 保留的设备名（不论扩展名）。
 fn is_windows_reserved(stem_upper: &str) -> bool {
     matches!(stem_upper, "CON" | "PRN" | "AUX" | "NUL")
         || matches!(stem_upper.strip_prefix("COM").or_else(|| stem_upper.strip_prefix("LPT")),
             Some(n) if n.len() == 1 && matches!(n.as_bytes()[0], b'1'..=b'9'))
 }
 
-/// True when `value` parses as an absolute http(s) URL with a host.
+/// 当 `value` 可解析为带主机的绝对 http(s) URL 时返回 true。
 pub fn is_http_url(value: &str) -> bool {
     match Url::parse(value.trim()) {
         Ok(parsed) => {
@@ -28,8 +28,8 @@ pub fn is_http_url(value: &str) -> bool {
     }
 }
 
-/// Normalize a user-supplied SHA-256: empty -> `None`, otherwise a lowercase
-/// 64-char hex string, or [`CoreError::InvalidSha256`].
+/// 规范化用户提供的 SHA-256 校验和：空字符串返回 `None`，
+/// 否则返回 64 位小写十六进制字符串；非法值返回 [`CoreError::InvalidSha256`]。
 pub fn normalize_sha256(value: &str) -> Result<Option<String>, CoreError> {
     let checksum = value.trim().to_lowercase();
     if checksum.is_empty() {
@@ -41,7 +41,7 @@ pub fn normalize_sha256(value: &str) -> Result<Option<String>, CoreError> {
     Ok(Some(checksum))
 }
 
-/// Make `value` safe to use as a Windows file name, never returning empty.
+/// 将 `value` 处理为可在 Windows 下安全使用的文件名（永远不会为空）。
 pub fn sanitize_filename(value: &str) -> String {
     let replaced: String = value
         .chars()
@@ -60,7 +60,7 @@ pub fn sanitize_filename(value: &str) -> String {
     cleaned.chars().take(240).collect()
 }
 
-/// True when `value` is already a valid Windows file name as-is.
+/// 当 `value` 本身已是合法的 Windows 文件名时返回 true。
 pub fn is_valid_windows_filename(value: &str) -> bool {
     if value.is_empty() || value != value.trim_end_matches(['.', ' ']) {
         return false;

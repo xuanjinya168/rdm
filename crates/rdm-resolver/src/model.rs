@@ -1,52 +1,51 @@
-//! Platform-agnostic result types produced by a resolver.
+//! 解析器产生的平台无关结果类型。
 //!
-//! These mirror the relevant parts of ParseHub's `types` package (`MediaRef`,
-//! `Post`) but are flattened into a shape the desktop UI can render directly and
-//! the download engine can consume one item at a time.
+//! 这些镜像了 ParseHub `types` 包的相关部分（`MediaRef`、`Post`），
+//! 但被扁平化为桌面 UI 可直接渲染、下载引擎可逐项消费的形状。
 
 use serde::Serialize;
 
-/// The kind of a single resolved media file.
+/// 单个已解析媒体文件的类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MediaKind {
-    /// A still image.
+    /// 静态图片。
     Image,
-    /// A video with audio.
+    /// 带音频的视频。
     Video,
-    /// A looping, silent clip (Twitter "animated_gif"), delivered as mp4.
+    /// 循环静音片段（Twitter "animated_gif"），以 mp4 格式交付。
     Gif,
 }
 
-/// One downloadable file extracted from a post.
+/// 从帖子中提取的单个可下载文件。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MediaItem {
     pub kind: MediaKind,
-    /// Direct URL of the highest-quality variant to download.
+    /// 要下载的最高质量变体的直接 URL。
     pub url: String,
-    /// Pixel width of the original media, if known (`0` when unknown).
+    /// 原始媒体的像素宽度（若已知，未知时为 `0`）。
     pub width: u32,
-    /// Pixel height of the original media, if known (`0` when unknown).
+    /// 原始媒体的像素高度（若已知，未知时为 `0`）。
     pub height: u32,
-    /// Duration in whole seconds, for video/gif.
+    /// 视频/gif 的时长（整秒）。
     pub duration_secs: Option<u32>,
-    /// File extension without the dot (e.g. `mp4`, `jpg`).
+    /// 文件扩展名（不带点，例如 `mp4`、`jpg`）。
     pub ext: String,
-    /// A safe, human-readable filename suggestion for the download.
+    /// 下载的安全、人类可读文件名建议。
     pub filename: String,
 }
 
-/// The result of resolving a single post URL.
+/// 解析单个帖子 URL 的结果。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedPost {
-    /// Identifier of the source platform (e.g. `twitter`).
+    /// 源平台的标识符（例如 `twitter`）。
     pub platform: String,
-    /// The canonical URL that was resolved.
+    /// 被解析的规范 URL。
     pub source_url: String,
-    /// Optional post title (articles); empty for plain tweets.
+    /// 可选的帖子标题（文章）；普通推文为空。
     pub title: String,
-    /// The post's text body.
+    /// 帖子的文本正文。
     pub text: String,
-    /// Every downloadable media file found in the post.
+    /// 帖子中找到的每个可下载媒体文件。
     pub media: Vec<MediaItem>,
 }
