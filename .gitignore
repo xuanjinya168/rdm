@@ -6,6 +6,9 @@ target/
 node_modules/
 apps/rdm-desktop/dist/
 
+# Root release packaging output
+dist/
+
 # Tauri generated
 apps/rdm-desktop/src-tauri/gen/
 
