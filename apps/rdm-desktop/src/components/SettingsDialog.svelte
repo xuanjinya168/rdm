@@ -9,7 +9,7 @@
   const ACTIVE_CHOICES = [1, 2, 3, 4, 5, 8, 10, 15, 20];
   const CONNECTION_CHOICES = [1, 2, 4, 8, 12, 16, 24, 32];
   const RETRY_CHOICES = [0, 1, 2, 3, 4, 5, 8, 10, 20];
-  // Values are KB/s; 0 = unlimited.
+  // 取值为 KB/s;0 表示不限速。
   const SPEED_CHOICES = [0, 512, 1024, 2048, 5120, 10240, 20480, 51200, 102400];
 
   let downloadDir = $state(untrack(() => settings.download_dir));

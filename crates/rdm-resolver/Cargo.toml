@@ -3,7 +3,7 @@ name = "rdm-resolver"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Media resolver for RDM: turns a social/media post URL into downloadable media items."
+description = "RDM 的媒体解析器:将社交媒体 / 帖子 URL 转换为可下载的媒体项。"
 
 [dependencies]
 serde.workspace = true

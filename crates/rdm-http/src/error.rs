@@ -3,19 +3,19 @@ use thiserror::Error;
 /// HTTP 层抛出的错误。
 #[derive(Debug, Error)]
 pub enum HttpError {
-    #[error("No download provider supports URL: {0}")]
+    #[error("没有可处理该 URL 的下载 Provider:{0}")]
     NoProvider(String),
 
-    #[error("Request to {url} failed with status {status}")]
+    #[error("请求 {url} 失败,状态码 {status}")]
     Status { status: u16, url: String },
 
-    #[error("Invalid provider header name: {0}")]
+    #[error("Provider 请求头名称无效:{0}")]
     InvalidHeaderName(String),
 
-    #[error("Invalid value for provider header {0}")]
+    #[error("Provider 请求头 {0} 的取值无效")]
     InvalidHeaderValue(String),
 
-    #[error("Provider may not override engine-managed header: {0}")]
+    #[error("Provider 不允许覆盖引擎管理的请求头:{0}")]
     ForbiddenHeader(String),
 
     #[error(transparent)]

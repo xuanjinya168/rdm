@@ -1,5 +1,4 @@
-// Wrappers over the Tauri commands (src-tauri/src/lib.rs) and the events the
-// backend emits.
+// 对 Tauri 命令(src-tauri/src/lib.rs)及后端事件的薄封装。
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -18,10 +17,10 @@ export const deleteTask = (id, deleteFile = false) =>
   invoke("delete_task", { id, deleteFile });
 export const revealTaskFile = ({ id }) => invoke("reveal_task_file", { id });
 
-// Resolve a social-media / web post URL into its downloadable media items.
+// 将社交媒体 / 网页帖子的 URL 解析为可下载的媒体项。
 export const resolveMedia = (url) => invoke("resolve_media", { url });
 
-// Subscriptions (each returns a Promise<unlisten>).
+// 事件订阅(每个订阅返回一个 Promise<unlisten>)。
 export const onTaskUpdate = (handler) =>
   listen("task://update", (event) => handler(event.payload));
 export const onOpenUrl = (handler) =>

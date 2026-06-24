@@ -281,7 +281,7 @@ mod tests {
         let raw = serde_json::json!({
             "download_dir": "D:/dl",
             "max_active_downloads": 5,
-            "default_connections": 999,      // out of range -> default 8
+            "default_connections": 999,      // 越界 -> 默认 8
             "speed_limit_bytes": 1.5,        // float -> default 0
             "retry_count": true,             // bool -> default 4
             "clipboard_monitoring": false,
@@ -364,7 +364,7 @@ mod tests {
             }
         );
         assert_eq!(store.load(), first);
-        assert_eq!(first.proxy_url, ""); // trimmed from whitespace
+        assert_eq!(first.proxy_url, ""); // 首尾空白已去除
 
         let replacement = AppSettings {
             download_dir: "D:/downloads".to_string(),

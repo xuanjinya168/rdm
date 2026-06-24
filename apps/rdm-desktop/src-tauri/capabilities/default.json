@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the main RDM window.",
+  "description": "RDM 主窗口所需的能力。",
   "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",

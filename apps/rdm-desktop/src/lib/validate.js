@@ -1,4 +1,4 @@
-// Input validation mirroring rdm-domain/validation.rs (and the Python rules).
+// 输入校验,与 rdm-domain/validation.rs(以及 Python 端的规则)保持一致。
 
 export function isHttpUrl(value) {
   try {
@@ -29,7 +29,7 @@ export function isValidWindowsFilename(value) {
   return !RESERVED.has(stem);
 }
 
-// Returns { value } (string|null) on success, or { error } on failure.
+// 成功时返回 { value }(string | null),失败时返回 { error }。
 export function normalizeSha256(value) {
   const checksum = value.trim().toLowerCase();
   if (!checksum) return { value: null };

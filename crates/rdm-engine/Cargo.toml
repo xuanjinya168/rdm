@@ -3,7 +3,7 @@ name = "rdm-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Segmented download engine for RDM: rate limiting, part files and the async download loop."
+description = "RDM 的分段下载引擎:限速、.part 文件管理与异步下载循环。"
 
 [dependencies]
 rdm-domain.workspace = true

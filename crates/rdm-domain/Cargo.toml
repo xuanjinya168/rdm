@@ -3,7 +3,7 @@ name = "rdm-domain"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Domain types for RDM: tasks, segments, validation and settings."
+description = "RDM 的领域类型:任务、分段、校验与设置。"
 
 [dependencies]
 serde.workspace = true

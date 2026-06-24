@@ -1,11 +1,11 @@
-# This crate is its own workspace (empty [workspace] below) so the Tauri build
-# stays independent of the backend workspace at ../../.. — keeping `cargo test`
-# there free of the heavy Tauri/WebView toolchain.
+# 该 crate 自身独立成 workspace(下方为空 [workspace] 节),以使 Tauri 构建
+# 与位于 ../../.. 的后端 workspace 解耦——从而那里的 `cargo test` 不必
+# 引入笨重的 Tauri/WebView 工具链。
 [package]
 name = "rdm-desktop"
 version = "0.2.0"
 edition = "2021"
-description = "RDM desktop application"
+description = "RDM 桌面应用"
 
 [lib]
 name = "rdm_desktop_lib"

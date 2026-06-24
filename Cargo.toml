@@ -7,7 +7,7 @@ exclude = ["apps"]
 version = "0.2.0"
 edition = "2021"
 license = "MIT"
-description = "RDM — a Rust HTTP/HTTPS multi-connection download manager"
+description = "RDM —— 一个 Rust 实现的 HTTP/HTTPS 多连接分段下载管理器"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

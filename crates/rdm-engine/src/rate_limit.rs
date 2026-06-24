@@ -103,7 +103,7 @@ mod tests {
     #[tokio::test]
     async fn acquire_paces_to_rate() {
         let limiter = RateLimiter::new(1024 * 1024);
-        assert!(limiter.acquire(1024 * 1024, || false).await); // drain the initial bucket
+        assert!(limiter.acquire(1024 * 1024, || false).await); // 先排空初始令牌桶
         let started = Instant::now();
         assert!(limiter.acquire(256 * 1024, || false).await);
         // 以 1 MiB/s 的速度传输 256 KiB 需要约 0.25 秒。
@@ -113,7 +113,7 @@ mod tests {
     #[tokio::test]
     async fn abort_unblocks_waiter_quickly() {
         let limiter = RateLimiter::new(1024);
-        assert!(limiter.acquire(1024, || false).await); // drain the bucket
+        assert!(limiter.acquire(1024, || false).await); // 排空令牌桶
         let started = Instant::now();
         assert!(!limiter.acquire(512 * 1024, || true).await);
         assert!(started.elapsed() < Duration::from_millis(500));

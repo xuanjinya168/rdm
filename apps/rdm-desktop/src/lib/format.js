@@ -1,4 +1,4 @@
-// Display helpers, mirroring the Python ui/formatters.
+// 显示格式化辅助函数,与 Python ui/formatters 模块对应。
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
@@ -61,8 +61,8 @@ export const ACTIVE_STATUSES = new Set([
   "verifying",
 ]);
 
-// Statuses that count as "active" for the filter/pause controls (excludes the
-// not-yet-started "queued"), matching ACTIVE_FILTER_STATUSES in Python.
+// 在筛选 / 暂停控制中视为「活动」的状态集合(不含尚未开始的 "queued"),
+// 与 Python 中的 ACTIVE_FILTER_STATUSES 保持一致。
 export const ACTIVE_FILTER_STATUSES = new Set([
   "probing",
   "downloading",

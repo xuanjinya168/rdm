@@ -4,7 +4,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum EngineError {
     /// 暂停或取消使运行提前结束；并非真正的失败。
-    #[error("download interrupted")]
+    #[error("下载已中断")]
     Interrupted,
 
     /// 不可重试的、有具体描述的下载问题（大小不匹配、校验和错误、

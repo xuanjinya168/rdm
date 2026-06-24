@@ -1,9 +1,8 @@
-# Tauri 2.11's dependency tree pulls `time 0.3.47/0.3.48`, whose generated
-# `From<HourBase>` impls hit an E0119 coherence error on rustc 1.96. Several
-# deps also require edition2024 (rustc >= 1.85) and MSRV 1.88. So the Tauri app
-# builds on 1.88.0, while the backend workspace builds on stable (../../.. uses
-# its own rust-toolchain.toml). The committed Cargo.lock additionally pins
-# `time` down to 0.3.36 (via serde_with 3.9 / plist 1.6) — do not `cargo update`
-# it back up, or the coherence error returns.
+# Tauri 2.11 的依赖树会拉入 `time 0.3.47/0.3.48`,其自动生成的
+# `From<HourBase>` 实现会在 rustc 1.96 上触发 E0119 一致性错误。还有若干依赖
+# 要求 edition2024(rustc >= 1.85)且 MSRV 为 1.88。因此 Tauri 应用使用 1.88.0
+# 构建,而后端 workspace 使用 stable(../../.. 自身带有 rust-toolchain.toml)。
+# 已提交的 Cargo.lock 还把 `time` 锁到 0.3.36(借助 serde_with 3.9 / plist 1.6)
+# ——切勿 `cargo update` 升回去,否则一致性错误会再次出现。
 [toolchain]
 channel = "1.88.0"

@@ -3,7 +3,7 @@
   import { isHttpUrl } from "../lib/validate.js";
   import { resolveMedia } from "../lib/api.js";
 
-  // onDownload(values) -> queues one media item and returns the created task.
+  // onDownload(values):将一个媒体项加入下载队列,并返回创建的任务。
   let { onDownload, downloadDir = "" } = $props();
 
   let url = $state("");
@@ -11,8 +11,8 @@
   let message = $state("");
   let messageType = $state("info");
   let post = $state(null);
-  let queued = $state(new Set()); // indices already sent to the download engine
-  let busy = $state(new Set()); // indices currently being queued
+  let queued = $state(new Set()); // 已经发送给下载引擎的索引
+  let busy = $state(new Set()); // 正在加入队列的索引
 
   function setMessage(text, type = "info") {
     message = text;

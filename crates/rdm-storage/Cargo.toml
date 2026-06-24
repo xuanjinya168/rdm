@@ -3,7 +3,7 @@ name = "rdm-storage"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "SQLite persistence for RDM: task and segment storage with schema migrations."
+description = "RDM 的 SQLite 持久化:任务与分段存储,以及 schema 迁移。"
 
 [dependencies]
 rdm-domain.workspace = true

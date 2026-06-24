@@ -1,7 +1,7 @@
 # RDM Desktop
 
-Tauri 2 + Svelte 5 frontend over the RDM backend crates (`rdm-service` →
-`rdm-engine`/`rdm-http`/`rdm-storage`/`rdm-domain`).
+基于 Tauri 2 + Svelte 5 的前端,运行于 RDM 后端 crate(`rdm-service` →
+`rdm-engine` / `rdm-http` / `rdm-storage` / `rdm-domain`)之上。
 
 ## 运行
 

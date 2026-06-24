@@ -3,7 +3,7 @@ name = "rdm-service"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Download orchestration for RDM: the task queue, scheduler and lifecycle controls."
+description = "RDM 的下载编排:任务队列、调度器与生命周期控制。"
 
 [dependencies]
 rdm-domain.workspace = true

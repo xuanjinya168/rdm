@@ -1,12 +1,12 @@
-//! Media resolver layer for RDM.
+//! RDM 的媒体解析层。
 //!
-//! Turns a social-media / web post URL into a [`ResolvedPost`] — a flat list of
-//! directly downloadable [`MediaItem`]s plus the post text, so the desktop app
-//! can hand each file to the download engine.
+//! 将社交媒体 / 网页帖子的 URL 转换为 [`ResolvedPost`]——一个扁平化的、
+//! 可直接下载的 [`MediaItem`] 列表,附带帖子正文文本,便于桌面应用将
+//! 每个文件交给下载引擎处理。
 //!
-//! Ported from the Python project ParseHub (<https://github.com/z-mio/ParseHub>).
-//! Twitter / X, Instagram and Threads are registered by default; additional
-//! platforms plug in by implementing [`MediaResolver`].
+//! 由 Python 项目 ParseHub(<https://github.com/z-mio/ParseHub>)移植而来。
+//! 默认已注册 Twitter / X、Instagram 和 Threads;实现 [`MediaResolver`]
+//! 即可接入更多平台。
 
 pub mod error;
 pub mod instagram;

@@ -116,12 +116,12 @@ mod tests {
     #[test]
     fn resume_rejects_mismatches() {
         let segs = build_segments("t", Some(1000), true, 4, 1);
-        assert!(!valid_resume_segments(&segs, Some(1000), 999)); // part size off
-        assert!(!valid_resume_segments(&segs, Some(900), 900)); // total off
-        assert!(!valid_resume_segments(&[], Some(1000), 1000)); // empty
+        assert!(!valid_resume_segments(&segs, Some(1000), 999)); // 分段大小不一致
+        assert!(!valid_resume_segments(&segs, Some(900), 900)); // 总大小不一致
+        assert!(!valid_resume_segments(&[], Some(1000), 1000)); // 空列表
 
         let mut gapped = segs.clone();
-        gapped.remove(1); // leaves a hole
+        gapped.remove(1); // 留下空洞
         assert!(!valid_resume_segments(&gapped, Some(1000), 1000));
 
         let mut over = segs.clone();
