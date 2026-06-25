@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-domain"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "directories",
  "serde",
@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-engine"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "futures-util",
@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-http"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "log",
  "percent-encoding",
@@ -1013,7 +1013,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-resolver"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "log",
@@ -1027,7 +1027,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-service"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rdm-domain",
  "rdm-engine",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "rdm-storage"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rdm-domain",
  "rusqlite",

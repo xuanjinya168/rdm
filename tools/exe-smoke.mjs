@@ -769,9 +769,9 @@ async function main() {
   const relaunched = await launchApp();
   app = relaunched.child;
   browser = relaunched.page;
-  assert.equal(
-    await browser.evaluate(`document.documentElement.dataset.theme`),
-    "light",
+  await waitFor(
+    "persisted light theme after restart",
+    () => browser.evaluate(`document.documentElement.dataset.theme === "light"`),
   );
   const restored = (await tasks()).find((task) => task.id === restartable.id);
   assert.equal(restored.status, "paused");

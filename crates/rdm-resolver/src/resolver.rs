@@ -73,10 +73,7 @@ impl ResolverRegistry {
                     }
                     builder = builder.proxy(p);
                 }
-                Err(error) => log::warn!(
-                    "忽略无效的媒体解析器代理 {:?}: {error}",
-                    proxy.url
-                ),
+                Err(error) => log::warn!("忽略无效的媒体解析器代理 {:?}: {error}", proxy.url),
             }
         }
         let client = builder.build()?;

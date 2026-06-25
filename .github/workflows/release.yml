@@ -60,11 +60,12 @@ jobs:
         shell: pwsh
         run: |
           $bundle = "apps/rdm-desktop/src-tauri/target/release/bundle"
+          $version = "${{ github.ref_name }}".TrimStart("v")
           $artifacts = Get-ChildItem -Path $bundle -Recurse -File |
-            Where-Object { $_.Extension -in ".msi", ".exe" } |
+            Where-Object { $_.Extension -in ".msi", ".exe" -and $_.Name -like "*_${version}_*" } |
             Sort-Object FullName
           if (-not $artifacts) {
-            throw "No MSI or NSIS artifacts found under $bundle"
+            throw "No MSI or NSIS artifacts found for version $version under $bundle"
           }
           $lines = foreach ($artifact in $artifacts) {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()

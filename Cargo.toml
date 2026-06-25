@@ -4,7 +4,7 @@ members = ["crates/*"]
 exclude = ["apps"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 description = "RDM —— 一个 Rust 实现的 HTTP/HTTPS 多连接分段下载管理器"

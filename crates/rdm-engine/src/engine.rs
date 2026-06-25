@@ -96,25 +96,25 @@ impl Signals {
 }
 
 /// 从外部暂停或取消正在运行的引擎的句柄。
-    #[derive(Clone)]
-    pub struct EngineHandle {
-        signals: Arc<Signals>,
+#[derive(Clone)]
+pub struct EngineHandle {
+    signals: Arc<Signals>,
+}
+
+impl EngineHandle {
+    /// 请求暂停；运行将以 `Paused` 状态结束。
+    pub fn pause(&self) {
+        self.signals.request_pause();
     }
 
-    impl EngineHandle {
-        /// 请求暂停；运行将以 `Paused` 状态结束。
-        pub fn pause(&self) {
-            self.signals.request_pause();
-        }
-
-        /// 请求取消；运行将以 `Canceled` 状态结束。
-        pub fn cancel(&self) {
-            self.signals.request_cancel();
-        }
+    /// 请求取消；运行将以 `Canceled` 状态结束。
+    pub fn cancel(&self) {
+        self.signals.request_cancel();
     }
+}
 
-    /// 工作器之间共享的可变下载状态，由一个互斥锁保护。
-    struct EngineState {
+/// 工作器之间共享的可变下载状态，由一个互斥锁保护。
+struct EngineState {
     task: DownloadTask,
     segments: Vec<Segment>,
     pending: VecDeque<u32>,
@@ -165,10 +165,10 @@ impl EngineState {
         self.samples_total as f64 / elapsed
     }
 
-        /// 窃取最繁忙活动分段的后半部分，返回 `(受害者, 新建)` 索引。
-        /// 受害者继续流式传输其裁剪后的范围，因此不会重复写入任何字节。
-        /// 调用方持有状态锁。
-        fn split_largest_active(&mut self) -> Option<(u32, u32)> {
+    /// 窃取最繁忙活动分段的后半部分，返回 `(受害者, 新建)` 索引。
+    /// 受害者继续流式传输其裁剪后的范围，因此不会重复写入任何字节。
+    /// 调用方持有状态锁。
+    fn split_largest_active(&mut self) -> Option<(u32, u32)> {
         if !(self.task.supports_ranges && self.task.total_size.unwrap_or(0) > 0) {
             return None;
         }
