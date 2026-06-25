@@ -102,28 +102,27 @@ async function stopProcess(child) {
 
 function closeMainWindow(child) {
   const script = `
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
 Add-Type @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
-public static class RdmSmokeWindowFinder {
+public static class RdmSmokeWindowCloser {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 }
 "@
 $targetPid = ${child.pid}
 $script:rdmWindow = [IntPtr]::Zero
-$callback = [RdmSmokeWindowFinder+EnumWindowsProc] {
+$callback = [RdmSmokeWindowCloser+EnumWindowsProc] {
   param($handle, $lParam)
   [uint32]$ownerPid = 0
-  [RdmSmokeWindowFinder]::GetWindowThreadProcessId($handle, [ref]$ownerPid) | Out-Null
+  [RdmSmokeWindowCloser]::GetWindowThreadProcessId($handle, [ref]$ownerPid) | Out-Null
   if ($ownerPid -eq $targetPid) {
     $title = New-Object System.Text.StringBuilder 256
-    [RdmSmokeWindowFinder]::GetWindowText($handle, $title, $title.Capacity) | Out-Null
+    [RdmSmokeWindowCloser]::GetWindowText($handle, $title, $title.Capacity) | Out-Null
     if ($title.ToString() -eq "RDM") {
       $script:rdmWindow = $handle
       return $false
@@ -131,22 +130,17 @@ $callback = [RdmSmokeWindowFinder+EnumWindowsProc] {
   }
   return $true
 }
-[RdmSmokeWindowFinder]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
+[RdmSmokeWindowCloser]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
 if ($script:rdmWindow -eq [IntPtr]::Zero) { throw "RDM main window is unavailable" }
-$root = [Windows.Automation.AutomationElement]::FromHandle($script:rdmWindow)
-$condition = New-Object Windows.Automation.PropertyCondition(
-  [Windows.Automation.AutomationElement]::AutomationIdProperty,
-  "view_7"
-)
-$button = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
-if (-not $button) { throw "RDM title-bar close button is unavailable" }
-$pattern = $button.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)
-$pattern.Invoke()
+$WM_CLOSE = 0x0010
+if (-not [RdmSmokeWindowCloser]::PostMessage($script:rdmWindow, $WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)) {
+  throw "Could not post WM_CLOSE to RDM main window"
+}
 `;
   const result = spawnSync(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-Command", script],
-    { encoding: "utf8", windowsHide: true, timeout: 10_000 },
+    { encoding: "utf8", windowsHide: true, timeout: 5_000 },
   );
   if (result.error) throw result.error;
   if (result.status !== 0) {
