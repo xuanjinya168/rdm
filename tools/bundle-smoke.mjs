@@ -56,19 +56,29 @@ function powershell(script) {
 
 function assertNoInstalledRdm() {
   const script = `
-$paths = @(
+$roots = @(
   "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*",
   "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*",
   "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*"
 )
-$installed = Get-ItemProperty $paths -ErrorAction SilentlyContinue |
-  Where-Object { $_.DisplayName -eq "RDM" }
-if ($installed) { exit 17 }
+$found = $false
+foreach ($root in $roots) {
+  foreach ($key in Get-ChildItem -Path $root -ErrorAction SilentlyContinue) {
+    $item = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+    if ($item.DisplayName -eq "RDM") {
+      $found = $true
+      break
+    }
+  }
+  if ($found) { break }
+}
+if ($found) { exit 17 }
+exit 0
 `;
   const result = spawnSync(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-Command", script],
-    { windowsHide: true },
+    { encoding: "utf8", windowsHide: true },
   );
   if (result.status === 17) {
     throw new Error(
@@ -76,7 +86,9 @@ if ($installed) { exit 17 }
     );
   }
   if (result.status !== 0) {
-    throw new Error(`Could not inspect installed applications (exit ${result.status}).`);
+    throw new Error(
+      `Could not inspect installed applications (exit ${result.status}).\n${result.stderr || result.stdout}`,
+    );
   }
 }
 
