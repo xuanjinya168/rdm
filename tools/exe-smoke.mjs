@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,6 +10,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const desktopDir = path.join(root, "apps", "rdm-desktop");
+const requireFromDesktop = createRequire(path.join(desktopDir, "package.json"));
+const WebSocket = globalThis.WebSocket ?? requireFromDesktop("ws");
 const executable = path.join(
   desktopDir,
   "src-tauri",
@@ -389,8 +392,13 @@ async function launchApp(args = []) {
   child.once("error", (error) => {
     console.error(`RDM process error: ${error.message}`);
   });
-  const page = await CdpPage.connect(debugPort);
-  return { child, page };
+  try {
+    const page = await CdpPage.connect(debugPort);
+    return { child, page };
+  } catch (error) {
+    await stopProcess(child);
+    throw error;
+  }
 }
 
 async function replaceApp(args = []) {
