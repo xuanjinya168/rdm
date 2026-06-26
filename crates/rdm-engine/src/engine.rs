@@ -1,6 +1,6 @@
 //! 分段下载引擎。使用 tokio 异步运行时驱动多连接下载。
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,6 +13,7 @@ use reqwest::header::{HeaderMap, CONTENT_LENGTH, CONTENT_RANGE, IF_RANGE, RANGE}
 use sha2::{Digest, Sha256};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
 use rdm_domain::segments::{build_segments, valid_resume_segments};
 use rdm_domain::validation::sanitize_filename;
@@ -24,6 +25,7 @@ use rdm_storage::DownloadDatabase;
 
 use crate::error::EngineError;
 use crate::files::{publish_part_file, reserve_part_file};
+use crate::hls::{self, ByteRange, MediaPlaylist, Playlist};
 use crate::rate_limit::RateLimiter;
 use crate::sparse::mark_sparse;
 
@@ -289,7 +291,13 @@ impl DownloadEngine {
             }),
         });
 
-        match inner.execute(&prepared).await {
+        let result = if hls::is_hls_url(&prepared.url) {
+            inner.execute_hls(&prepared).await
+        } else {
+            inner.execute_direct(&prepared).await
+        };
+
+        match result {
             Ok(()) => {}
             Err(EngineError::Interrupted) => {
                 inner.finalize_status(inner.aborted_status(), None);
@@ -365,7 +373,10 @@ impl EngineInner {
         }
     }
 
-    async fn execute(self: &Arc<Self>, prepared: &PreparedDownload) -> Result<(), EngineError> {
+    async fn execute_direct(
+        self: &Arc<Self>,
+        prepared: &PreparedDownload,
+    ) -> Result<(), EngineError> {
         self.set_status(TaskStatus::Probing, None)?;
         let probe = probe_url(&self.client, &prepared.url, &self.prepared_headers).await?;
         *self
@@ -384,6 +395,425 @@ impl EngineInner {
         } else {
             self.finish().await?;
         }
+        Ok(())
+    }
+
+    async fn execute_hls(self: &Arc<Self>, prepared: &PreparedDownload) -> Result<(), EngineError> {
+        self.set_status(TaskStatus::Probing, None)?;
+        let (media_url, mut media) = self.resolve_hls_media_playlist(&prepared.url).await?;
+        *self
+            .download_url
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = media_url.clone();
+
+        let concurrency = self.hls_concurrency(media.segments.len());
+        // 并发 HEAD 探测分片大小，得到精确的总字节数用于进度估算。
+        // 探测失败的分片 size 保持 None，total_size() 随之为 None（退化为不定长下载）。
+        hls::probe_segment_sizes(
+            &self.client,
+            &self.prepared_headers,
+            &mut media,
+            concurrency,
+        )
+        .await;
+        let total_size = media.total_size();
+        let fmp4 = media.init_segment.is_some();
+        let requested_filename = {
+            let st = self.state();
+            (!st.task.filename.is_empty()).then(|| st.task.filename.clone())
+        };
+
+        self.prepare_hls_task(&media_url, total_size, fmp4, requested_filename)?;
+        self.check_interrupted()?;
+        self.set_status(TaskStatus::Downloading, None)?;
+
+        let temp_dir = self.hls_temp_dir();
+        if temp_dir.exists() {
+            std::fs::remove_dir_all(&temp_dir)?;
+        }
+        std::fs::create_dir_all(&temp_dir)?;
+
+        let result = async {
+            let keys = self.fetch_hls_keys(&media).await?;
+            let actual_bytes = self
+                .download_hls_segments_to_cache(&media, &keys, &temp_dir, total_size)
+                .await?;
+            let concatenated_bytes = self.concatenate_hls_segments(&media, &temp_dir)?;
+            if concatenated_bytes != actual_bytes {
+                return Err(EngineError::Download(format!(
+                    "HLS concatenated size mismatch ({concatenated_bytes}/{actual_bytes} bytes)"
+                )));
+            }
+            Ok(actual_bytes)
+        }
+        .await;
+
+        match result {
+            Ok(actual_bytes) => {
+                std::fs::remove_dir_all(&temp_dir)?;
+                self.finish_hls(actual_bytes).await?;
+            }
+            Err(error) => {
+                if let Err(cleanup_error) = std::fs::remove_dir_all(&temp_dir) {
+                    log::warn!(
+                        "Could not remove HLS temporary directory {}: {cleanup_error}",
+                        temp_dir.display()
+                    );
+                }
+                let (task_id, part_path) = {
+                    let st = self.state();
+                    (st.task.id.clone(), st.task.part_path())
+                };
+                let _ = self.discard_partial(&task_id, &part_path);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    async fn resolve_hls_media_playlist(
+        &self,
+        initial_url: &str,
+    ) -> Result<(String, MediaPlaylist), EngineError> {
+        let mut url = initial_url.to_string();
+        for _ in 0..5 {
+            self.check_interrupted()?;
+            let content = self.fetch_hls_text(&url).await?;
+            match hls::parse_playlist(&content, &url)? {
+                Playlist::Media(media) => return Ok((url, media)),
+                Playlist::Master(master) => {
+                    let variant = master.best_variant().ok_or_else(|| {
+                        EngineError::Download("HLS master playlist has no variants".into())
+                    })?;
+                    url = variant.uri.clone();
+                }
+            }
+        }
+        Err(EngineError::Download(
+            "HLS master playlist nesting is too deep".into(),
+        ))
+    }
+
+    async fn fetch_hls_text(&self, url: &str) -> Result<String, EngineError> {
+        let mut builder = self.client.get(url);
+        builder = builder.headers(self.prepared_headers.clone());
+        let response = self.send_interruptible(builder).await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(EngineError::Download(format!(
+                "HTTP status {} while fetching HLS playlist",
+                status.as_u16()
+            )));
+        }
+        let bytes = self.read_hls_body(response, false).await?;
+        String::from_utf8(bytes)
+            .map_err(|_| EngineError::Download("HLS playlist is not valid UTF-8".into()))
+    }
+
+    fn prepare_hls_task(
+        &self,
+        playlist_url: &str,
+        total_size: Option<u64>,
+        fmp4: bool,
+        requested_filename: Option<String>,
+    ) -> Result<(), EngineError> {
+        let (task_id, destination) = {
+            let st = self.state();
+            (st.task.id.clone(), st.task.destination.clone())
+        };
+        self.database.save_segments(&task_id, &[])?;
+        let requested = hls_output_filename(playlist_url, requested_filename, fmp4);
+        let (name, _) = reserve_part_file(Path::new(&destination), &requested)?;
+        {
+            let mut st = self.state();
+            st.task.filename = name;
+            st.task.total_size = total_size;
+            st.task.downloaded = 0;
+            st.task.supports_ranges = false;
+            st.task.etag = None;
+            st.task.last_modified = None;
+            st.task.actual_sha256 = None;
+            st.task.error = None;
+        }
+        self.notify(true)?;
+        Ok(())
+    }
+
+    fn hls_temp_dir(&self) -> PathBuf {
+        let st = self.state();
+        Path::new(&st.task.destination).join(format!(".rdm-{}-hls", st.task.id))
+    }
+
+    async fn fetch_hls_keys(
+        &self,
+        media: &MediaPlaylist,
+    ) -> Result<HashMap<String, [u8; 16]>, EngineError> {
+        let mut keys = HashMap::new();
+        for segment in &media.segments {
+            let Some(encryption) = &segment.encryption else {
+                continue;
+            };
+            if keys.contains_key(&encryption.uri) {
+                continue;
+            }
+            self.check_interrupted()?;
+            let mut builder = self.client.get(&encryption.uri);
+            builder = builder.headers(self.prepared_headers.clone());
+            let response = self.send_interruptible(builder).await?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(EngineError::Download(format!(
+                    "HTTP status {} while fetching HLS AES-128 key",
+                    status.as_u16()
+                )));
+            }
+            let bytes = self.read_hls_body(response, false).await?;
+            if bytes.len() != 16 {
+                return Err(hls::HlsError::InvalidKeyLength(bytes.len()).into());
+            }
+            let mut key = [0u8; 16];
+            key.copy_from_slice(&bytes);
+            keys.insert(encryption.uri.clone(), key);
+        }
+        Ok(keys)
+    }
+
+    async fn download_hls_segments_to_cache(
+        &self,
+        media: &MediaPlaylist,
+        keys: &HashMap<String, [u8; 16]>,
+        temp_dir: &Path,
+        total_size: Option<u64>,
+    ) -> Result<u64, EngineError> {
+        let mut actual_bytes = 0u64;
+        let mut downloaded_bytes = 0u64;
+
+        // fMP4：先下载初始化分片（#EXT-X-MAP），它必须前置拼接才能播放。
+        // 初始化分片按 HLS 规范不加密。
+        if let Some(init) = &media.init_segment {
+            self.check_interrupted()?;
+            let init_bytes = self
+                .download_hls_segment(None, &init.uri, init.byte_range)
+                .await?;
+            std::fs::write(hls_init_path(temp_dir), &init_bytes)?;
+            let len = init_bytes.len() as u64;
+            actual_bytes = actual_bytes.saturating_add(len);
+            downloaded_bytes = downloaded_bytes.saturating_add(len);
+            {
+                let mut st = self.state();
+                st.task.total_size = total_size;
+                st.task.downloaded = downloaded_bytes;
+            }
+            self.notify(true)?;
+        }
+
+        // 顺序下载媒体分片：分片之间相互独立，但为了保证 EngineState
+        // （std::sync::Mutex）在受限线程数的运行时下不与下载 worker 互相阻塞，
+        // 这里串行下载、逐片更新进度。每片解密后写入按 index 命名的临时文件，
+        // 最后由 concatenate_hls_segments 按顺序拼接（init 在最前）。
+        for segment in &media.segments {
+            self.check_interrupted()?;
+            let encrypted_or_plain = self
+                .download_hls_segment(Some(segment.index), &segment.uri, segment.byte_range)
+                .await?;
+            let decoded = if let Some(encryption) = &segment.encryption {
+                let key = keys.get(&encryption.uri).ok_or_else(|| {
+                    EngineError::Download(format!("Missing HLS AES-128 key {}", encryption.uri))
+                })?;
+                let iv = segment
+                    .iv()
+                    .ok_or_else(|| EngineError::Download("Missing HLS AES-128 IV".to_string()))?;
+                hls::decrypt_aes128_cbc(&encrypted_or_plain, key, &iv)?
+            } else {
+                encrypted_or_plain
+            };
+            std::fs::write(hls_segment_path(temp_dir, segment.index), &decoded)?;
+            let len = decoded.len() as u64;
+            actual_bytes = actual_bytes.saturating_add(len);
+            downloaded_bytes = downloaded_bytes.saturating_add(len);
+            {
+                let mut st = self.state();
+                st.task.total_size = total_size;
+                st.task.downloaded = downloaded_bytes;
+            }
+            self.notify(true)?;
+        }
+        Ok(actual_bytes)
+    }
+
+    /// HLS 分片下载并发度：受 connections 限制，但不超过分片数，
+    /// 且至少为 1。
+    fn hls_concurrency(&self, segment_count: usize) -> usize {
+        let connections = self.state().task.connections as usize;
+        connections.min(segment_count.max(1)).max(1)
+    }
+
+    /// 下载单个媒体分片（`index` 为 1 基序号的来源）或 init 段（`index` 为 None），
+    /// 失败时按 `retry_count` 重试。`byte_range` 存在时以 HTTP Range 仅请求该区间。
+    async fn download_hls_segment(
+        &self,
+        index: Option<usize>,
+        uri: &str,
+        byte_range: Option<ByteRange>,
+    ) -> Result<Vec<u8>, EngineError> {
+        let mut attempts = 0u32;
+        loop {
+            self.check_interrupted()?;
+            let result = self.download_hls_segment_once(uri, byte_range).await;
+            match result {
+                Ok(bytes) => return Ok(bytes),
+                Err(EngineError::Interrupted) => return Err(EngineError::Interrupted),
+                Err(error) => {
+                    if self.signals.should_abort() {
+                        return Err(EngineError::Interrupted);
+                    }
+                    if !error.is_retryable() || attempts >= self.retry_count {
+                        let label = match index {
+                            Some(index) => format!("HLS segment {}", index + 1),
+                            None => "HLS init segment".to_string(),
+                        };
+                        return Err(EngineError::Download(format!("{label} failed: {error}")));
+                    }
+                    attempts += 1;
+                    self.interruptible_sleep(2u64.pow(attempts - 1).min(8))
+                        .await?;
+                }
+            }
+        }
+    }
+
+    async fn download_hls_segment_once(
+        &self,
+        uri: &str,
+        byte_range: Option<ByteRange>,
+    ) -> Result<Vec<u8>, EngineError> {
+        let mut builder = self.client.get(uri);
+        builder = builder.headers(self.prepared_headers.clone());
+        if let Some(range) = byte_range {
+            builder = builder.header(RANGE, range.http_range_value());
+        }
+        let response = self.send_interruptible(builder).await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(EngineError::Download(format!(
+                "HTTP status {} while fetching HLS segment",
+                status.as_u16()
+            )));
+        }
+        let body = self.read_hls_body(response, true).await?;
+        // 请求了区间但服务器以 200 返回全量时，自行裁剪，避免拼接出错误内容。
+        if let Some(range) = byte_range {
+            if status == reqwest::StatusCode::OK {
+                return Ok(range.slice(&body).to_vec());
+            }
+        }
+        Ok(body)
+    }
+
+    async fn read_hls_body(
+        &self,
+        response: reqwest::Response,
+        count_speed: bool,
+    ) -> Result<Vec<u8>, EngineError> {
+        let mut body = Vec::new();
+        let mut stream = response.bytes_stream();
+        loop {
+            let item = tokio::select! {
+                biased;
+                _ = self.signals.token.cancelled() => return Err(EngineError::Interrupted),
+                item = stream.next() => item,
+            };
+            let chunk = match item {
+                Some(Ok(chunk)) => chunk,
+                Some(Err(error)) => return Err(EngineError::Reqwest(error)),
+                None => break,
+            };
+            self.check_interrupted()?;
+            if chunk.is_empty() {
+                continue;
+            }
+            let amount = chunk.len() as u64;
+            let signals = Arc::clone(&self.signals);
+            if !self
+                .limiter
+                .acquire(amount, move || signals.should_abort())
+                .await
+            {
+                return Err(EngineError::Interrupted);
+            }
+            if count_speed {
+                self.state().record_sample(amount);
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
+    }
+
+    fn concatenate_hls_segments(
+        &self,
+        media: &MediaPlaylist,
+        temp_dir: &Path,
+    ) -> Result<u64, EngineError> {
+        let part_path = self.state().task.part_path();
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&part_path)?;
+        let mut total = 0u64;
+        // fMP4：初始化分片必须前置拼接，否则拼接出的分片无法解复用播放。
+        if media.init_segment.is_some() {
+            self.check_interrupted()?;
+            let init_path = hls_init_path(temp_dir);
+            let bytes = std::fs::read(&init_path)?;
+            output.write_all(&bytes)?;
+            total = total.saturating_add(bytes.len() as u64);
+        }
+        for segment in &media.segments {
+            self.check_interrupted()?;
+            let segment_path = hls_segment_path(temp_dir, segment.index);
+            let bytes = std::fs::read(&segment_path)?;
+            output.write_all(&bytes)?;
+            total = total.saturating_add(bytes.len() as u64);
+        }
+        Ok(total)
+    }
+
+    async fn finish_hls(&self, actual: u64) -> Result<(), EngineError> {
+        let (part_path, expected_sha, task_id) = {
+            let st = self.state();
+            (
+                st.task.part_path(),
+                st.task.expected_sha256.clone(),
+                st.task.id.clone(),
+            )
+        };
+        if !part_path.exists() {
+            return Err(EngineError::Download(
+                "Temporary HLS download file is missing".into(),
+            ));
+        }
+        if let Some(expected_sha) = expected_sha {
+            self.set_status(TaskStatus::Verifying, None)?;
+            let actual_sha = self.calculate_sha256(&part_path).await?;
+            self.state().task.actual_sha256 = Some(actual_sha.clone());
+            if actual_sha != expected_sha {
+                self.discard_partial(&task_id, &part_path)?;
+                return Err(EngineError::Download(format!(
+                    "SHA-256 verification failed (expected {expected_sha}, got {actual_sha})"
+                )));
+            }
+        }
+
+        let mut task = self.state().task.clone();
+        publish_part_file(&mut task)?;
+        {
+            let mut st = self.state();
+            st.task.filename = task.filename;
+            st.task.downloaded = actual;
+            st.task.total_size = Some(actual);
+        }
+        self.database.save_segments(&task_id, &[])?;
+        self.set_status(TaskStatus::Completed, None)?;
         Ok(())
     }
 
@@ -1023,6 +1453,47 @@ fn validate_partial_response(
     Ok(range_len)
 }
 
+fn hls_output_filename(playlist_url: &str, requested: Option<String>, fmp4: bool) -> String {
+    let base = match requested {
+        Some(filename) => sanitize_filename(&filename),
+        None => {
+            let from_url = Url::parse(playlist_url)
+                .ok()
+                .and_then(|parsed| {
+                    parsed.path_segments().and_then(|mut segments| {
+                        segments
+                            .rfind(|segment| !segment.is_empty())
+                            .map(str::to_string)
+                    })
+                })
+                .unwrap_or_else(|| "download".to_string());
+            sanitize_filename(&from_url)
+        }
+    };
+    with_hls_extension(base, fmp4)
+}
+
+/// 把 HLS 输出文件名强制为合适的容器扩展名：
+/// fMP4/CMAF → `.m4s`，MPEG-TS → `.ts`。
+fn with_hls_extension(filename: String, fmp4: bool) -> String {
+    let target = if fmp4 { "m4s" } else { "ts" };
+    if let Some(ext) = file_extension(&filename) {
+        let stem_len = filename.len().saturating_sub(ext.len() + 1);
+        return format!("{}.{target}", &filename[..stem_len]);
+    }
+    append_extension(filename, target)
+}
+
+fn hls_segment_path(temp_dir: &Path, index: usize) -> PathBuf {
+    // 扩展名仅用于临时文件区分，拼接后统一由 with_hls_extension 决定输出名。
+    temp_dir.join(format!("{index:08}.seg"))
+}
+
+/// fMP4 初始化分片（#EXT-X-MAP）的临时缓存路径；拼接时位于最前。
+fn hls_init_path(temp_dir: &Path) -> PathBuf {
+    temp_dir.join("init.seg")
+}
+
 fn file_extension(filename: &str) -> Option<&str> {
     let (_, ext) = filename.rsplit_once('.')?;
     if ext.is_empty()
@@ -1072,9 +1543,13 @@ fn unix_time() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes::Aes128;
+    use cbc::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
     use rdm_http::{DownloadProvider, HttpError};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+
+    type Aes128CbcEncryptor = cbc::Encryptor<Aes128>;
 
     fn make_data(size: usize) -> Vec<u8> {
         (0..size).map(|i| (i % 251) as u8).collect()
@@ -1118,6 +1593,137 @@ mod tests {
             }
         });
         format!("http://{addr}")
+    }
+
+    struct HlsFixtureResponse {
+        body: Vec<u8>,
+        content_type: &'static str,
+        content_length: bool,
+    }
+
+    impl HlsFixtureResponse {
+        fn text(body: impl Into<String>) -> Self {
+            Self {
+                body: body.into().into_bytes(),
+                content_type: "application/vnd.apple.mpegurl",
+                content_length: true,
+            }
+        }
+
+        fn binary(body: Vec<u8>, content_length: bool) -> Self {
+            Self {
+                body,
+                content_type: "application/octet-stream",
+                content_length,
+            }
+        }
+    }
+
+    async fn start_hls_server(
+        routes: std::collections::HashMap<String, HlsFixtureResponse>,
+    ) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let routes = Arc::new(routes);
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let routes = Arc::clone(&routes);
+                tokio::spawn(async move {
+                    let _ = handle_hls_connection(&mut socket, &routes).await;
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    async fn handle_hls_connection(
+        socket: &mut TcpStream,
+        routes: &std::collections::HashMap<String, HlsFixtureResponse>,
+    ) -> std::io::Result<()> {
+        let mut buffer = Vec::new();
+        let mut chunk = [0u8; 1024];
+        loop {
+            let read = socket.read(&mut chunk).await?;
+            if read == 0 {
+                return Ok(());
+            }
+            buffer.extend_from_slice(&chunk[..read]);
+            if buffer.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if buffer.len() > 64 * 1024 {
+                return Ok(());
+            }
+        }
+        let text = String::from_utf8_lossy(&buffer);
+        let request_line = text.lines().next().unwrap_or_default();
+        let mut request_parts = request_line.split_whitespace();
+        let method = request_parts.next().unwrap_or("GET");
+        let raw_path = request_parts.next().unwrap_or("/");
+        let path = raw_path.split('?').next().unwrap_or(raw_path);
+
+        let Some(response) = routes.get(path) else {
+            socket
+                .write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await?;
+            return Ok(());
+        };
+
+        // 服务端兑现 Range 请求（206 + 区间切片），让 byte-range 分片下载被真实验证。
+        if let Some((start, end)) = parse_range_header(&text, response.body.len()) {
+            let slice = response.body.get(start..=end).unwrap_or(&[]);
+            let mut headers = String::from("HTTP/1.1 206 Partial Content\r\n");
+            headers.push_str(&format!("Content-Type: {}\r\n", response.content_type));
+            headers.push_str(&format!("Content-Length: {}\r\n", slice.len()));
+            headers.push_str(&format!(
+                "Content-Range: bytes {start}-{end}/{}\r\n",
+                response.body.len()
+            ));
+            headers.push_str("Connection: close\r\n\r\n");
+            socket.write_all(headers.as_bytes()).await?;
+            if method != "HEAD" {
+                socket.write_all(slice).await?;
+            }
+            return Ok(());
+        }
+
+        let mut headers = String::from("HTTP/1.1 200 OK\r\n");
+        headers.push_str(&format!("Content-Type: {}\r\n", response.content_type));
+        if response.content_length {
+            headers.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
+        }
+        headers.push_str("Connection: close\r\n\r\n");
+        socket.write_all(headers.as_bytes()).await?;
+        if method != "HEAD" {
+            socket.write_all(&response.body).await?;
+        }
+        Ok(())
+    }
+
+    /// 解析 `Range: bytes=start-end` 头，返回含两端的字节下标；缺失或非法时为 None。
+    fn parse_range_header(request: &str, body_len: usize) -> Option<(usize, usize)> {
+        let value = request.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("range")
+                .then(|| value.trim())
+        })?;
+        let spec = value.strip_prefix("bytes=")?;
+        let (start, end) = spec.split_once('-')?;
+        let start: usize = start.trim().parse().ok()?;
+        let end = end.trim();
+        let end = if end.is_empty() {
+            body_len.saturating_sub(1)
+        } else {
+            end.parse().ok()?
+        };
+        let end = end.min(body_len.saturating_sub(1));
+        if start > end {
+            return None;
+        }
+        Some((start, end))
     }
 
     async fn handle_connection(socket: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {
@@ -1260,6 +1866,368 @@ mod tests {
             Arc::new(RateLimiter::new(0)),
             Arc::new(ProviderRegistry::default()),
         )
+    }
+
+    fn encrypt_hls_segment(plain: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> Vec<u8> {
+        Aes128CbcEncryptor::new(key.into(), iv.into()).encrypt_padded_vec_mut::<Pkcs7>(plain)
+    }
+
+    async fn run_task(url: &str, dir: &Path, connections: u32) -> DownloadTask {
+        let (database, limiter, providers) = setup(dir);
+        let task = DownloadTask::create(url, dir, connections, "", "").unwrap();
+        database.save_task(&task).unwrap();
+        let engine = DownloadEngine::new(
+            task,
+            Arc::clone(&database),
+            limiter,
+            providers,
+            no_proxy_client(),
+            Arc::new(|_, _| {}),
+            2,
+        );
+        engine.run().await
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn downloads_aes128_hls_without_segment_content_length() {
+        let key = [0x31u8; 16];
+        let iv = [0x42u8; 16];
+        let chunks = [
+            b"first clear transport-stream payload".to_vec(),
+            b"second payload that is intentionally longer".to_vec(),
+            b"third payload".to_vec(),
+        ];
+        let expected = chunks.concat();
+        let encrypted = chunks
+            .iter()
+            .map(|chunk| encrypt_hls_segment(chunk, &key, &iv))
+            .collect::<Vec<_>>();
+        let routes = std::collections::HashMap::from([
+            (
+                "/enc/index.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-TARGETDURATION:8
+#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x42424242424242424242424242424242
+#EXTINF:8.0,
+seg0.ts
+#EXTINF:8.0,
+seg1.ts
+#EXTINF:8.0,
+seg2.ts
+#EXT-X-ENDLIST
+",
+                ),
+            ),
+            (
+                "/enc/key.bin".to_string(),
+                HlsFixtureResponse::binary(key.to_vec(), true),
+            ),
+            (
+                "/enc/seg0.ts".to_string(),
+                HlsFixtureResponse::binary(encrypted[0].clone(), false),
+            ),
+            (
+                "/enc/seg1.ts".to_string(),
+                HlsFixtureResponse::binary(encrypted[1].clone(), false),
+            ),
+            (
+                "/enc/seg2.ts".to_string(),
+                HlsFixtureResponse::binary(encrypted[2].clone(), false),
+            ),
+        ]);
+        let base = start_hls_server(routes).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let final_task = run_task(&format!("{base}/enc/index.m3u8"), dir.path(), 8).await;
+
+        assert_eq!(
+            final_task.status,
+            TaskStatus::Completed,
+            "error: {:?}",
+            final_task.error
+        );
+        assert_eq!(final_task.filename, "index.ts");
+        assert_eq!(final_task.total_size, Some(expected.len() as u64));
+        assert_eq!(final_task.downloaded, expected.len() as u64);
+        assert_eq!(std::fs::read(final_task.output_path()).unwrap(), expected);
+        assert!(!dir
+            .path()
+            .join(format!(".rdm-{}-hls", final_task.id))
+            .exists());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn downloads_plain_vod_hls() {
+        let chunks = [
+            b"plain segment zero".to_vec(),
+            b"plain segment one".to_vec(),
+            b"plain segment two".to_vec(),
+        ];
+        let expected = chunks.concat();
+        let routes = std::collections::HashMap::from([
+            (
+                "/plain/index.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXTINF:4.0,
+seg0.ts
+#EXTINF:4.0,
+seg1.ts
+#EXTINF:4.0,
+seg2.ts
+#EXT-X-ENDLIST
+",
+                ),
+            ),
+            (
+                "/plain/seg0.ts".to_string(),
+                HlsFixtureResponse::binary(chunks[0].clone(), false),
+            ),
+            (
+                "/plain/seg1.ts".to_string(),
+                HlsFixtureResponse::binary(chunks[1].clone(), false),
+            ),
+            (
+                "/plain/seg2.ts".to_string(),
+                HlsFixtureResponse::binary(chunks[2].clone(), false),
+            ),
+        ]);
+        let base = start_hls_server(routes).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let final_task = run_task(&format!("{base}/plain/index.m3u8"), dir.path(), 4).await;
+
+        assert_eq!(
+            final_task.status,
+            TaskStatus::Completed,
+            "error: {:?}",
+            final_task.error
+        );
+        assert_eq!(std::fs::read(final_task.output_path()).unwrap(), expected);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn master_hls_selects_highest_bandwidth_variant() {
+        let low = b"low quality bytes".to_vec();
+        let high_chunks = [b"high quality ".to_vec(), b"transport stream".to_vec()];
+        let expected = high_chunks.concat();
+        let routes = std::collections::HashMap::from([
+            (
+                "/master.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=640x360
+low/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=1920x1080
+high/index.m3u8
+",
+                ),
+            ),
+            (
+                "/low/index.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXTINF:4.0,
+seg.ts
+#EXT-X-ENDLIST
+",
+                ),
+            ),
+            (
+                "/low/seg.ts".to_string(),
+                HlsFixtureResponse::binary(low, false),
+            ),
+            (
+                "/high/index.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXTINF:4.0,
+seg0.ts
+#EXTINF:4.0,
+seg1.ts
+#EXT-X-ENDLIST
+",
+                ),
+            ),
+            (
+                "/high/seg0.ts".to_string(),
+                HlsFixtureResponse::binary(high_chunks[0].clone(), false),
+            ),
+            (
+                "/high/seg1.ts".to_string(),
+                HlsFixtureResponse::binary(high_chunks[1].clone(), false),
+            ),
+        ]);
+        let base = start_hls_server(routes).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let final_task = run_task(&format!("{base}/master.m3u8"), dir.path(), 4).await;
+
+        assert_eq!(
+            final_task.status,
+            TaskStatus::Completed,
+            "error: {:?}",
+            final_task.error
+        );
+        assert_eq!(std::fs::read(final_task.output_path()).unwrap(), expected);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn downloads_fmp4_hls_and_prepends_init_segment() {
+        // fMP4/CMAF：#EXT-X-MAP 声明的初始化分片必须前置拼接，
+        // 否则拼接出的分片无法解复用播放。
+        let init_bytes = b"ftypisom...init payload".to_vec();
+        let chunks = [
+            b"moof...first mdat".to_vec(),
+            b"moof...second mdat".to_vec(),
+        ];
+        let expected = init_bytes
+            .iter()
+            .chain(chunks[0].iter())
+            .chain(chunks[1].iter())
+            .copied()
+            .collect::<Vec<_>>();
+        let routes = std::collections::HashMap::from([
+            (
+                "/fmp4/index.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXTINF:4.0,
+seg0.m4s
+#EXTINF:4.0,
+seg1.m4s
+#EXT-X-ENDLIST
+",
+                ),
+            ),
+            (
+                "/fmp4/init.mp4".to_string(),
+                HlsFixtureResponse::binary(init_bytes.clone(), false),
+            ),
+            (
+                "/fmp4/seg0.m4s".to_string(),
+                HlsFixtureResponse::binary(chunks[0].clone(), false),
+            ),
+            (
+                "/fmp4/seg1.m4s".to_string(),
+                HlsFixtureResponse::binary(chunks[1].clone(), false),
+            ),
+        ]);
+        let base = start_hls_server(routes).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let final_task = run_task(&format!("{base}/fmp4/index.m3u8"), dir.path(), 4).await;
+
+        assert_eq!(
+            final_task.status,
+            TaskStatus::Completed,
+            "error: {:?}",
+            final_task.error
+        );
+        // fMP4 输出强制使用 .m4s 扩展名（而非源 .m3u8）。
+        assert_eq!(final_task.filename, "index.m4s");
+        // 初始化分片字节被前置拼接，随后才是媒体分片。
+        assert_eq!(std::fs::read(final_task.output_path()).unwrap(), expected);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn hls_probes_segment_sizes_for_exact_total() {
+        // 分片携带 Content-Length：HEAD 探测应取得真实字节数，
+        // 最终任务的 total_size/downloaded 与拼接后的实际字节数一致。
+        let chunks = [
+            b"exact-size segment zero".to_vec(),
+            b"exact-size segment one".to_vec(),
+        ];
+        let expected = chunks.concat();
+        let routes = std::collections::HashMap::from([
+            (
+                "/sized/index.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXTINF:4.0,
+seg0.ts
+#EXTINF:4.0,
+seg1.ts
+#EXT-X-ENDLIST
+",
+                ),
+            ),
+            (
+                "/sized/seg0.ts".to_string(),
+                HlsFixtureResponse::binary(chunks[0].clone(), true),
+            ),
+            (
+                "/sized/seg1.ts".to_string(),
+                HlsFixtureResponse::binary(chunks[1].clone(), true),
+            ),
+        ]);
+        let base = start_hls_server(routes).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let final_task = run_task(&format!("{base}/sized/index.m3u8"), dir.path(), 4).await;
+
+        assert_eq!(
+            final_task.status,
+            TaskStatus::Completed,
+            "error: {:?}",
+            final_task.error
+        );
+        assert_eq!(final_task.total_size, Some(expected.len() as u64));
+        assert_eq!(final_task.downloaded, expected.len() as u64);
+        assert_eq!(std::fs::read(final_task.output_path()).unwrap(), expected);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn downloads_byterange_hls_from_single_resource() {
+        // 多段共享同一资源文件、靠 #EXT-X-BYTERANGE 区分；下载须按区间请求并按序拼接。
+        // init=[0,1000)，seg0=[1000,2000)，seg1=[2000,3000)，拼接应还原整文件。
+        let resource = make_data(3000);
+        let expected = resource.clone();
+        let routes = std::collections::HashMap::from([
+            (
+                "/br/index.m3u8".to_string(),
+                HlsFixtureResponse::text(
+                    "#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXT-X-MAP:URI=\"media.bin\",BYTERANGE=\"1000@0\"
+#EXTINF:4.0,
+#EXT-X-BYTERANGE:1000@1000
+media.bin
+#EXTINF:4.0,
+#EXT-X-BYTERANGE:1000
+media.bin
+#EXT-X-ENDLIST
+",
+                ),
+            ),
+            (
+                "/br/media.bin".to_string(),
+                HlsFixtureResponse::binary(resource.clone(), true),
+            ),
+        ]);
+        let base = start_hls_server(routes).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let final_task = run_task(&format!("{base}/br/index.m3u8"), dir.path(), 4).await;
+
+        assert_eq!(
+            final_task.status,
+            TaskStatus::Completed,
+            "error: {:?}",
+            final_task.error
+        );
+        // 三个区间长度已知，无需 HEAD：总大小直接来自区间长度之和。
+        assert_eq!(final_task.total_size, Some(expected.len() as u64));
+        assert_eq!(final_task.downloaded, expected.len() as u64);
+        // 按区间请求并按序拼接 → 还原整文件；若忽略 Range 会拼出多份全量副本。
+        assert_eq!(std::fs::read(final_task.output_path()).unwrap(), expected);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

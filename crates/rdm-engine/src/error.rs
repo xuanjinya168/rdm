@@ -23,6 +23,9 @@ pub enum EngineError {
 
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
+
+    #[error(transparent)]
+    Hls(#[from] crate::hls::HlsError),
 }
 
 impl EngineError {

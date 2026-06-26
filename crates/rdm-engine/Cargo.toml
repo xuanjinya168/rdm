@@ -17,6 +17,9 @@ futures-util.workspace = true
 sha2.workspace = true
 bytes.workspace = true
 log.workspace = true
+url.workspace = true
+aes.workspace = true
+cbc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

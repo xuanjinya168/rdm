@@ -7,6 +7,7 @@
 pub mod engine;
 pub mod error;
 pub mod files;
+pub mod hls;
 pub mod rate_limit;
 pub mod sparse;
 

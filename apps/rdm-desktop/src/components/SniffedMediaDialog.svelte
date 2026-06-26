@@ -10,9 +10,13 @@
   const KIND_LABEL = { image: "图片", video: "视频", audio: "音频", manifest: "流媒体" };
 
   const items = untrack(() => media?.candidates ?? []);
-  // manifest（m3u8/mpd）暂仅识别展示，不可下载。
+  // manifest 中：m3u8（HLS）可下载，mpd（DASH）暂仅识别展示。
+  const isDownloadable = (c) => {
+    if (c.kind !== "manifest") return true;
+    return (c.ext || "").toLowerCase() === "m3u8";
+  };
   const downloadableIndexes = items
-    .map((c, i) => (c.kind === "manifest" ? -1 : i))
+    .map((c, i) => (isDownloadable(c) ? i : -1))
     .filter((i) => i >= 0);
 
   let selected = $state(untrack(() => new Set(downloadableIndexes)));
@@ -137,7 +141,7 @@
             type="checkbox"
             aria-label={`选择 ${c.filename || c.url}`}
             checked={selected.has(index)}
-            disabled={c.kind === "manifest" || queued.has(index) || busy.has(index)}
+            disabled={!isDownloadable(c) || queued.has(index) || busy.has(index)}
             onchange={(e) => toggle(index, e.currentTarget.checked)}
           />
           <div class="item-body">
@@ -145,14 +149,14 @@
               <span class="kind kind-{c.kind || 'other'}">{KIND_LABEL[c.kind] || c.kind || "资源"}</span>
               <strong title={c.url}>{c.filename || c.url}</strong>
             </div>
-            <small>{metaText(c)}{#if c.kind === "manifest"} · 仅识别，暂不支持下载{/if}</small>
+            <small>{metaText(c)}{#if !isDownloadable(c)} · 仅识别，DASH 暂不支持下载{/if}</small>
             <small class="item-url" title={c.url}>{c.url}</small>
           </div>
           {#if queued.has(index)}
             <span class="item-state done"><AppIcon name="check" size={14} /> 已加入</span>
           {:else if busy.has(index)}
             <span class="item-state">添加中…</span>
-          {:else if c.kind === "manifest"}
+          {:else if !isDownloadable(c)}
             <span class="item-state muted">仅识别</span>
           {:else}
             <button class="row-dl" onclick={() => downloadOne(index)}>下载</button>
