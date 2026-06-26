@@ -1,4 +1,4 @@
-//! 下载 Provider。从 Python 的 `providers` 包迁移而来。
+//! 下载 Provider。
 //!
 //! Provider 将任务中存储的 URL 转化为一次引擎执行实际使用的
 //! URL 与请求头 —— 是鉴权或签名源的扩展点。普通的 HTTP/HTTPS

@@ -1,5 +1,4 @@
-//! URL、校验和、文件名校验。从 Python `validation` 模块迁移而来，
-//! 保留相同的 Windows 平台规则。
+//! URL、校验和、文件名校验。保留 Windows 平台规则。
 
 use url::Url;
 

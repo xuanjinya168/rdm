@@ -1,7 +1,6 @@
 //! RDM 桌面应用的 Tauri 后端。
 //!
-//! 基于 [`rdm_service::DownloadManager`] 的命令层，以及从 Python 应用移植的
-//! 桌面集成功能：单实例 + URL 传递、系统托盘（支持关闭到托盘）、优雅退出、
+//! 基于 [`rdm_service::DownloadManager`] 的命令层，以及桌面集成功能：
 //! 打开任务文件夹。前端订阅 `task://update` 获取实时进度，
 //! 订阅 `rdm://open-url` / `rdm://new-download` 响应托盘/第二实例触发。
 //!
@@ -187,7 +186,7 @@ fn reveal_task_file(app: AppHandle, state: State<'_, AppState>, id: String) -> R
     }
 }
 
-/// CLI 参数中的首个 http/https URL，对应 Python 的 `first_http_url`。
+/// CLI 参数中的首个 http/https URL。
 fn first_http_url(args: &[String]) -> Option<String> {
     args.iter().find(|arg| is_http_url(arg)).cloned()
 }

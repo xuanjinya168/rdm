@@ -1,4 +1,4 @@
-// 输入校验,与 rdm-domain/validation.rs(以及 Python 端的规则)保持一致。
+// 输入校验,与 rdm-domain/validation.rs 保持一致。
 
 export function isHttpUrl(value) {
   try {

@@ -4,7 +4,6 @@
 //! 可直接下载的 [`MediaItem`] 列表,附带帖子正文文本,便于桌面应用将
 //! 每个文件交给下载引擎处理。
 //!
-//! 由 Python 项目 ParseHub(<https://github.com/z-mio/ParseHub>)移植而来。
 //! 默认已注册 Twitter / X、Instagram 和 Threads;实现 [`MediaResolver`]
 //! 即可接入更多平台。
 

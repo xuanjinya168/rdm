@@ -52,7 +52,7 @@ fn apply_proxy(mut builder: reqwest::ClientBuilder, proxy: &ProxyConfig) -> reqw
 
 /// 为 `connections` 个并发的分段请求构建客户端。
 ///
-/// 复刻 Python 引擎的 httpx 配置：使用 identity 编码（让字节区间
+/// 使用 identity 编码（让字节区间与文件偏移一一对应）、跟随重定向，
 /// 与文件偏移一一对应）、跟随重定向，并将连接池略大于工作线程数。
 /// 故意不设置总请求超时 —— 多 GB 的下载不应在中途被中断；
 /// 仅设置连接超时与每次读取的不活跃超时。

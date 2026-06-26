@@ -1,9 +1,4 @@
-//! 分段下载引擎。Python `downloader.engine` 模块的异步（tokio）移植。
-//!
-//! Python 引擎在独立线程上运行每次下载，使用工作池并通过关闭共享客户端
-//! 来中断阻塞的套接字读取。这里单个 [`DownloadEngine::run`] future 驱动整个下载，
-//! 分段工作器是 tokio 任务，暂停/取消通过 [`CancellationToken`] 传递，
-//! 借助 `select!` 中断进行中的读取。
+//! 分段下载引擎。使用 tokio 异步运行时驱动多连接下载。
 
 use std::collections::{HashSet, VecDeque};
 use std::io::{Read, Seek, SeekFrom, Write};

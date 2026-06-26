@@ -1,4 +1,4 @@
-//! `.part` 文件的预留与发布。从 Python 的 `downloader.files` 模块迁移而来。
+//! `.part` 文件的预留与发布。
 //!
 //! 输出文件名通过 `.part` 文件在整个进程内进行抢占，使得两个并发
 //! 下载永远不会指向同一路径；最终的文件会在移动到位时避免覆盖
@@ -11,7 +11,7 @@ use std::sync::Mutex;
 
 use rdm_domain::DownloadTask;
 
-/// 在所有下载工作线程之间串行化文件名选择，对应 Python 实现中的模块级锁。
+/// 在所有下载工作线程之间串行化文件名选择。
 static PATH_LOCK: Mutex<()> = Mutex::new(());
 
 const MAX_ATTEMPTS: u32 = 10_000;

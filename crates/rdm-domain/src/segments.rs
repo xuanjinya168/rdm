@@ -1,4 +1,4 @@
-//! 分段规划与续传校验。从 Python `downloader.segments` 模块迁移而来。
+//! 分段规划与续传校验。
 
 use crate::models::Segment;
 

@@ -1,4 +1,4 @@
-//! URL 探测。从 Python 的 `downloader.probe` 模块迁移而来。
+//! URL 探测。
 
 use percent_encoding::percent_decode_str;
 use rdm_domain::validation::sanitize_filename;

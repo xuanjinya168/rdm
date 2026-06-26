@@ -1,4 +1,4 @@
-//! 下载任务数据库。从 Python 的 `DownloadDatabase` 迁移而来。
+//! 下载任务数据库。
 
 use std::path::PathBuf;
 use std::sync::Mutex;

@@ -1,9 +1,8 @@
-//! RDM 的下载调度层。Python `manager` 模块的异步移植。
+//! RDM 的下载调度层。
 //!
 //! [`DownloadManager`] 拥有任务表，按配置的并发上限调度排队的
 //! 下载任务，并提供 UI 所需的生命周期操作（add/start/pause/
-//! cancel/delete）。后台调度任务取代了 Python 中的调度线程，
-//! 并改用 [`tokio::sync::Notify`] 唤醒，替代条件变量。
+//! cancel/delete）。后台调度任务使用 [`tokio::sync::Notify`] 唤醒。
 
 mod error;
 mod manager;

@@ -1,5 +1,4 @@
-//! 进程内的令牌桶速率限制器。所有下载工作线程共享，
-//! 从 Python 的 `downloader.rate_limit` 模块异步化移植而来。
+//! 进程内的令牌桶速率限制器。所有下载工作线程共享。
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

@@ -1,4 +1,4 @@
-//! 任务与分段的领域模型。从 Python `models` 模块迁移而来。
+//! 任务与分段的领域模型。
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,8 +9,7 @@ use uuid::Uuid;
 use crate::error::CoreError;
 use crate::validation::normalize_sha256;
 
-/// 下载任务的生命周期状态。序列化为与 Python 版 `TaskStatus`
-/// 一致的小写字符串，便于直接读取历史数据库。
+/// 下载任务的生命周期状态。序列化为小写字符串，便于直接读取历史数据库。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {

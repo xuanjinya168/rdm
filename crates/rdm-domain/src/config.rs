@@ -1,5 +1,4 @@
-//! 应用程序设置及其磁盘存储。从 Python `config` 模块迁移而来，
-//! 保留了「拒绝非法值并回退为默认值」的语义。
+//! 应用程序设置及其磁盘存储。保留「拒绝非法值并回退为默认值」的语义。
 
 use std::fs;
 use std::io::Write;
@@ -126,8 +125,7 @@ impl AppSettings {
             return defaults;
         };
 
-        // 仅接受范围内的 JSON 整数——浮点数和布尔值会被拒绝，
-        // 以匹配 Python 中 `type(value) is int` 的检查。
+        // 仅接受范围内的 JSON 整数——浮点数和布尔值会被拒绝。
         let bounded = |name: &str, default: i64, min: i64, max: i64| -> i64 {
             match obj.get(name) {
                 Some(Value::Number(n)) if n.is_i64() || n.is_u64() => match n.as_i64() {

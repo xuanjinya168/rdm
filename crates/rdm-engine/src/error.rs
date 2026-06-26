@@ -26,8 +26,7 @@ pub enum EngineError {
 }
 
 impl EngineError {
-    /// 该错误是否值得重试，对应 Python 引擎对
-    /// `(HTTPError, OSError, ValueError)` 的重试过滤规则。
+    /// 该错误是否值得重试。
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,

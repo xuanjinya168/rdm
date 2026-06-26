@@ -2,7 +2,7 @@
 //!
 //! 移植自 ParseHub 的 `provider_api/twitter.py` + `parsers/parser/twitter.py`。
 //! 它通过公开的 GraphQL `TweetResultByRestId` 端点使用已知的 web bearer token
-//! 读取单个推文。与 Python 参考实现不同，我们首先激活访客 token
+//! 读取单个推文。它通过公开的 GraphQL `TweetResultByRestId` 端点使用已知的 web bearer token
 //! （`/1.1/guest/activate.json`），端点要求匿名读取时使用该 token。
 
 use async_trait::async_trait;
