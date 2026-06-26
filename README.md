@@ -15,7 +15,8 @@ RDM 是一个 Windows HTTP/HTTPS 多连接分段下载管理器,使用 **Rust** 
 - `.part` 临时文件、文件大小校验及原子重命名
 - 可注册下载 Provider,为认证 / 签名链接预留扩展点
 - X / Twitter、Instagram、Threads 帖子媒体解析
-- 浏览器扩展（实验性）：把浏览器下载交给 RDM，详见 [`apps/rdm-extension/README.md`](apps/rdm-extension/README.md)
+- 浏览器扩展（MV3）：支持下载拦截、媒体嗅探（图片/视频/音频/m3u8），右键菜单，
+  详见 [`apps/rdm-extension/README.md`](apps/rdm-extension/README.md)
 
 ## 项目结构
 
@@ -79,5 +80,5 @@ npm run icons       # 重新生成占位图标（可选）
 配置、SQLite 数据库默认保存在 `%LOCALAPPDATA%\RDM`,迁移通过 SQLite
 `PRAGMA user_version` 管理。
 
-当前版本不含网页嗅探、BT、FTP 或 DRM 下载。浏览器扩展为实验性功能，
-通过仅监听 127.0.0.1 的本地 HTTP 桥与桌面端协作。
+当前版本不含 BT、FTP 或 DRM 下载。浏览器扩展通过仅监听 127.0.0.1 的
+本地 HTTP 桥与桌面端协作。
