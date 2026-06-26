@@ -45,3 +45,18 @@ jobs:
       - run: npm run build
       - run: npm run app:build
       - run: npm run smoke:exe
+
+  extension:
+    name: extension (mv3)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/rdm-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # 扩展无运行时依赖，直接跑纯逻辑单测；并重生成图标确保与提交一致。
+      - run: node --test
+      - run: node scripts/make-icons.mjs

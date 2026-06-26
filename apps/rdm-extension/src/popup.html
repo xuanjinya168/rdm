@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RDM 下载管理器</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <img src="../icons/icon48.png" alt="" class="logo" width="28" height="28" />
+      <div>
+        <h1>RDM Downloader</h1>
+        <p class="subtitle">把下载交给 RDM 桌面端</p>
+      </div>
+    </header>
+
+    <main class="body">
+      <label class="row toggle">
+        <span class="label">自动拦截下载</span>
+        <input type="checkbox" id="intercept-toggle" />
+        <span class="switch" aria-hidden="true"></span>
+      </label>
+      <p class="hint" id="toggle-hint">关闭时仅使用右键菜单手动交给 RDM。</p>
+
+      <div class="row bridge">
+        <div>
+          <div class="label">桌面端连接</div>
+          <div class="bridge-status" id="bridge-status">检测中…</div>
+        </div>
+        <button type="button" id="test-btn" class="btn">测试连接</button>
+      </div>
+
+      <div class="bridge-url" id="bridge-url"></div>
+    </main>
+
+    <footer class="footer">
+      <span>仅监听 127.0.0.1</span>
+    </footer>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -4,6 +4,11 @@
 //! 桌面集成功能：单实例 + URL 传递、系统托盘（支持关闭到托盘）、优雅退出、
 //! 打开任务文件夹。前端订阅 `task://update` 获取实时进度，
 //! 订阅 `rdm://open-url` / `rdm://new-download` 响应托盘/第二实例触发。
+//!
+//! [`bridge`] 模块提供一个仅监听 127.0.0.1 的本地 HTTP 桥，
+//! 供浏览器扩展把拦截到的下载交给 RDM。
+
+mod bridge;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -188,7 +193,7 @@ fn first_http_url(args: &[String]) -> Option<String> {
 }
 
 /// 显示并聚焦主窗口。
-fn show_main_window(app: &AppHandle) {
+pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
@@ -321,6 +326,10 @@ pub fn run() {
                 "RDM started; {} task(s) restored from database",
                 app.state::<AppState>().manager.all_tasks().len()
             );
+
+            // 启动浏览器扩展用的本地 HTTP 桥（仅 127.0.0.1）。Tauri 的
+            // 异步运行时即 tokio，axum 可在此正常运行；绑定失败仅记录日志。
+            tauri::async_runtime::spawn(bridge::serve(app.handle().clone()));
 
             build_tray(app.handle())?;
             Ok(())

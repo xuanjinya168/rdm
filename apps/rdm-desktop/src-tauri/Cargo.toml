@@ -23,6 +23,11 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-log = "2"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 浏览器扩展与桌面端之间的本地 HTTP 桥（仅监听 127.0.0.1）。
+axum = "0.7"
+# axum 的网络监听与异步运行时需要 tokio（Tauri 运行时即 tokio，此处仅显式声明）。
+tokio = { version = "1", features = ["net"] }
 rdm-domain = { path = "../../../crates/rdm-domain" }
 rdm-storage = { path = "../../../crates/rdm-storage" }
 rdm-http = { path = "../../../crates/rdm-http" }

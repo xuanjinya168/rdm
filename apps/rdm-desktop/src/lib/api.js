@@ -27,3 +27,7 @@ export const onOpenUrl = (handler) =>
   listen("rdm://open-url", (event) => handler(event.payload));
 export const onNewDownload = (handler) =>
   listen("rdm://new-download", () => handler());
+// 浏览器扩展通过本地 HTTP 桥拦截下载后，后端发出该事件，
+// 由前端弹出确认框（payload: { url, filename? }）。
+export const onExternalDownload = (handler) =>
+  listen("rdm://external-download", (event) => handler(event.payload));

@@ -1,0 +1,12 @@
+{
+  "name": "rdm-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RDM 浏览器扩展：把浏览器下载交给 RDM 桌面端处理。",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "license": "MIT"
+}

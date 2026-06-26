@@ -25,6 +25,7 @@
     onTaskUpdate,
     onOpenUrl,
     onNewDownload,
+    onExternalDownload,
   } from "./lib/api.js";
   import {
     formatBytes,
@@ -56,6 +57,7 @@
 
   let addOpen = $state(false);
   let addUrl = $state("");
+  let addFilename = $state("");
   let settingsOpen = $state(false);
   let deleteTargets = $state([]);
   let deleteCancel = $state();
@@ -223,6 +225,10 @@
         );
         await register(onOpenUrl((url) => openAdd(url)));
         await register(onNewDownload(() => openAdd("")));
+        // 浏览器扩展拦截的下载：弹出确认框，预填扩展提供的文件名。
+        await register(
+          onExternalDownload(({ url, filename }) => openAdd(url, filename ?? "")),
+        );
 
         const [initialTasks, loadedSettings, launchUrl] = await Promise.all([
           listTasks(),
@@ -295,9 +301,10 @@
     }
   }
 
-  function openAdd(url) {
+  function openAdd(url, filename = "") {
     page = "downloads";
     addUrl = url;
+    addFilename = filename;
     addOpen = true;
   }
 
@@ -517,7 +524,13 @@
 {/if}
 
 {#if addOpen && settings}
-  <AddDialog {settings} initialUrl={addUrl} onsubmit={submitAdd} onclose={() => (addOpen = false)} />
+  <AddDialog
+    {settings}
+    initialUrl={addUrl}
+    initialFilename={addFilename}
+    onsubmit={submitAdd}
+    onclose={() => (addOpen = false)}
+  />
 {/if}
 
 {#if settingsOpen && settings}

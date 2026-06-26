@@ -3,13 +3,13 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { validateDownloadForm } from "../lib/forms.js";
 
-  let { settings, initialUrl = "", onsubmit, onclose } = $props();
+  let { settings, initialUrl = "", initialFilename = "", onsubmit, onclose } = $props();
 
   const CONNECTION_CHOICES = [1, 2, 4, 8, 12, 16, 24, 32];
 
   let url = $state(untrack(() => initialUrl));
   let destination = $state(untrack(() => settings.download_dir));
-  let filename = $state("");
+  let filename = $state(untrack(() => initialFilename));
   let connections = $state(untrack(() => settings.default_connections));
   let sha256 = $state("");
   let error = $state("");
