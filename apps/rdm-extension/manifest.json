@@ -21,8 +21,17 @@
     "type": "module",
     "service_worker": "src/background.js"
   },
-  "permissions": ["downloads", "storage", "contextMenus", "notifications"],
+  "permissions": [
+    "downloads",
+    "storage",
+    "contextMenus",
+    "notifications",
+    "activeTab",
+    "scripting",
+    "webRequest"
+  ],
   "host_permissions": ["http://127.0.0.1:43721/"],
+  "optional_host_permissions": ["<all_urls>"],
   "options_ui": {
     "page": "src/popup.html",
     "open_in_tab": false

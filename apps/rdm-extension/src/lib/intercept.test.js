@@ -2,10 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { shouldIntercept } from "./intercept.js";
-import { MIN_INTERCEPT_BYTES } from "./config.js";
+import { MIN_INTERCEPT_BYTES, DEFAULT_SETTINGS } from "./config.js";
 
 const ON = { interceptEnabled: true };
 const OFF = { interceptEnabled: false };
+
+test("auto-intercept is disabled by default (matches README and popup)", () => {
+  assert.equal(DEFAULT_SETTINGS.interceptEnabled, false);
+});
 
 function item(overrides = {}) {
   return { url: "https://example.com/file.zip", filename: "file.zip", ...overrides };

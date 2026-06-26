@@ -31,3 +31,7 @@ export const onNewDownload = (handler) =>
 // 由前端弹出确认框（payload: { url, filename? }）。
 export const onExternalDownload = (handler) =>
   listen("rdm://external-download", (event) => handler(event.payload));
+// 浏览器扩展嗅探到一批媒体后，后端发出该事件，由前端弹出批量确认对话框
+//（payload: { candidates: [...], pageTitle? }）。
+export const onSniffedMedia = (handler) =>
+  listen("rdm://sniffed-media", (event) => handler(event.payload));

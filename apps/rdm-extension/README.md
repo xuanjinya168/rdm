@@ -1,7 +1,8 @@
 # RDM 浏览器扩展（实验性）
 
 一个 Manifest V3 浏览器扩展，把浏览器下载交给 **RDM 桌面端** 处理。
-支持自动拦截下载，或通过右键菜单手动交给 RDM。
+支持自动拦截下载、右键菜单手动交给 RDM，以及**主动嗅探当前页面的图片/音视频资源**
+并发送到桌面端下载。
 
 > 实验性功能。需要 RDM 桌面端（≥ 0.2.2）同时在运行。
 
@@ -46,6 +47,15 @@ v1 不做可配置端口。
 
 ## 使用方式
 
+- **媒体嗅探（点击弹窗「嗅探当前页面」）**：扫描当前页的 `img/picture`、
+  `video/audio/source`、srcset、已加载资源（Performance），列出图片/视频/音频候选，
+  支持类型筛选与多选。**仅在点击时临时针对当前 Tab 采集**，不常驻抓包。
+  流媒体（m3u8/mpd）暂仅识别展示，下载引擎后置迭代。
+  - **单个「发送」** → `POST /downloads`，桌面端弹出与新建下载一致的确认框。
+  - **「全部发送至 RDM」** → `POST /media-candidates` 一次性推送整批，桌面端弹出
+    **批量确认对话框**，勾选后才创建任务。
+  - **网络嗅探（可选开关）**：开启后申请站点访问权限（`<all_urls>`），监听页面媒体
+    网络请求以捕获 `<video>` 之外的直链/分片地址；不开启则仅用 DOM/Performance 采集。
 - **自动拦截（开关开启时）**：浏览器发起的下载若满足条件（http/https 直链、
   非网页/字体/脚本资源、体积 ≥ 100KB），会被取消浏览器侧下载，桌面端弹出
   确认框，用户点「开始下载」后才真正开始。**安全机制**：扩展会先确认桥已接收
@@ -70,13 +80,17 @@ npm run icons       # 重新生成占位 PNG 图标（无外部图像依赖）
 ```
 ├─ manifest.json          MV3 清单
 ├─ src/
-│  ├─ background.js       service worker：拦截 + 右键菜单 + 通知
-│  ├─ popup.{html,css,js} 工具栏弹窗：开关 / 连接测试 / 状态
+│  ├─ background.js       service worker：拦截 + 右键菜单 + 通知 + 网络嗅探缓存
+│  ├─ popup.{html,css,js} 工具栏弹窗：嗅探 / 列表 / 开关 / 连接测试
+│  ├─ content/
+│  │  └─ media-sniffer.js 注入页面的自包含采集器（DOM/Performance/iframe）
 │  └─ lib/
 │     ├─ config.js        桥地址、storage 键、阈值常量
 │     ├─ bridge.js        postDownload / pingHealth（薄 fetch 封装）
 │     ├─ intercept.js     shouldIntercept（纯函数，可单测）
-│     └─ intercept.test.js
+│     ├─ sniffer.js       媒体归一化/去重/分类（纯函数，可单测）
+│     ├─ cache.js         Tab 隔离的网络嗅探缓存（纯模块，可单测）
+│     └─ *.test.js        node --test 单测
 ├─ icons/                 占位品牌色图标（16/48/128）
 └─ scripts/make-icons.mjs 重生成图标
 ```
@@ -85,5 +99,8 @@ npm run icons       # 重新生成占位 PNG 图标（无外部图像依赖）
 
 - 桥仅绑定到 `127.0.0.1`，不对外网或局域网开放。
 - 扩展只请求必要的权限：`downloads`（拦截）、`storage`（开关）、
-  `contextMenus`（右键）、`notifications`（离线提示）。
-- `host_permissions` 仅限 `http://127.0.0.1:43721/`，扩展不会读取任意网站内容。
+  `contextMenus`（右键）、`notifications`（离线提示）、`activeTab` + `scripting`
+  （点击「嗅探当前页面」时临时注入采集器）、`webRequest`（网络嗅探）。
+- `host_permissions` 仅限 `http://127.0.0.1:43721/`（与桌面端通信）。
+- `<all_urls>` 列为 **optional**（可选）权限，仅当用户在弹窗里开启「网络嗅探」时才
+  运行时申请；未授权时只做 DOM/Performance 嗅探，扩展不会被动读取任意网站内容。

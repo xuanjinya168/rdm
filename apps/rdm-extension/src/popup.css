@@ -17,7 +17,7 @@
 }
 
 body {
-  width: 280px;
+  width: 380px;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -63,7 +63,7 @@ body {
 }
 
 .hint {
-  margin: -4px 0 6px;
+  margin: -2px 0 4px;
   font-size: 11px;
   color: var(--muted);
   line-height: 1.4;
@@ -148,6 +148,11 @@ body {
   border-color: var(--accent);
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .bridge-url {
   font-size: 11px;
   color: var(--muted);
@@ -160,4 +165,193 @@ body {
   font-size: 10px;
   color: var(--muted);
   text-align: center;
+}
+
+/* === 媒体嗅探 === */
+.sniff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sniff-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+  flex: 1;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.net-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 6px 0;
+}
+
+/* 类型筛选条 */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+}
+
+.chip.is-active {
+  background: var(--accent-muted);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.chip-n {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 批量工具条 */
+.bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* 列表与卡片 */
+.media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.media-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.card-check {
+  flex: none;
+}
+
+.card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-name {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.card-url {
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  margin-top: 1px;
+}
+
+.badge {
+  flex: none;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.badge-image {
+  background: rgba(75, 196, 134, 0.18);
+  color: var(--success);
+}
+
+.badge-video {
+  background: rgba(91, 116, 255, 0.2);
+  color: #9fb0ff;
+}
+
+.badge-audio {
+  background: rgba(224, 168, 91, 0.18);
+  color: #e0a85b;
+}
+
+.badge-manifest {
+  background: rgba(224, 91, 112, 0.18);
+  color: var(--danger);
+}
+
+.btn-send {
+  flex: none;
+  padding: 5px 10px;
+}
+
+.sniff-status {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  min-height: 14px;
 }

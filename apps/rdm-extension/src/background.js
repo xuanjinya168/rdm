@@ -1,8 +1,14 @@
 // Service worker：拦截浏览器下载并转发给 RDM，提供右键菜单，
 // 并在桌面端不可达时给出通知。纯逻辑位于 ./lib/，便于单测。
+//
+// 另含「媒体嗅探」的网络采集（M2）：当用户授予 <all_urls> 后，监听页面媒体
+// 响应并按 Tab 缓存，供 popup 与 DOM/Performance 结果合并。该链路与上面的下载
+// 拦截完全独立、互不干扰。
 
 import { shouldIntercept } from "./lib/intercept.js";
 import { postDownload } from "./lib/bridge.js";
+import { tabMediaCache } from "./lib/cache.js";
+import { isMediaResponse } from "./lib/sniffer.js";
 import {
   STORAGE_KEYS,
   DEFAULT_SETTINGS,
@@ -108,3 +114,62 @@ function stripPath(filename) {
   const base = String(filename).split(/[\\/]/).pop() || filename;
   return base.trim() || undefined;
 }
+
+// --- 媒体嗅探：网络采集（M2，与下载拦截独立） ----------------------------
+// 监听响应完成事件，命中媒体的存入按 Tab 隔离的缓存，供 popup 读取。
+// 监听器在顶层同步注册（MV3 要求），但仅当用户已授予对应站点的 host 权限
+// （optional <all_urls>）时浏览器才会投递这些事件——未授权即静默无数据，
+// DOM/Performance 嗅探照常可用，符合「不默认全局抓包」的隐私约束。
+
+function onMediaResponseCompleted(details) {
+  const { tabId, url, responseHeaders } = details;
+  if (tabId == null || tabId < 0 || !url) return;
+  let contentType = "";
+  let contentLength;
+  for (const h of responseHeaders || []) {
+    const name = (h.name || "").toLowerCase();
+    if (name === "content-type") contentType = h.value || "";
+    else if (name === "content-length") {
+      const n = Number(h.value);
+      if (Number.isFinite(n) && n > 0) contentLength = n;
+    }
+  }
+  if (!isMediaResponse(url, contentType)) return;
+  // 异步写入 chrome.storage.session（内部串行化），webRequest 监听无需等待。
+  tabMediaCache.add(tabId, { url, contentType, contentLength }).catch(() => {});
+}
+
+if (chrome.webRequest) {
+  chrome.webRequest.onCompleted.addListener(
+    onMediaResponseCompleted,
+    { urls: ["<all_urls>"] },
+    ["responseHeaders"],
+  );
+}
+
+// Tab 关闭或开始导航到新页面时，清掉其网络嗅探缓存。
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabMediaCache.clear(tabId).catch(() => {});
+});
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") tabMediaCache.clear(tabId).catch(() => {});
+});
+
+// popup 读取/清理某 Tab 的网络嗅探缓存（缓存读写为异步，返回 true 保持通道）。
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!msg || typeof msg !== "object") return;
+  if (msg.type === "getNetworkMedia") {
+    tabMediaCache
+      .get(msg.tabId)
+      .then((items) => sendResponse({ items }))
+      .catch(() => sendResponse({ items: [] }));
+    return true;
+  }
+  if (msg.type === "clearNetworkMedia") {
+    tabMediaCache
+      .clear(msg.tabId)
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+});

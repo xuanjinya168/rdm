@@ -11,6 +11,7 @@
   import SettingsDialog from "./components/SettingsDialog.svelte";
   import AppIcon from "./components/AppIcon.svelte";
   import MediaResolverPage from "./components/MediaResolverPage.svelte";
+  import SniffedMediaDialog from "./components/SniffedMediaDialog.svelte";
   import {
     listTasks,
     getSettings,
@@ -26,6 +27,7 @@
     onOpenUrl,
     onNewDownload,
     onExternalDownload,
+    onSniffedMedia,
   } from "./lib/api.js";
   import {
     formatBytes,
@@ -59,6 +61,7 @@
   let addUrl = $state("");
   let addFilename = $state("");
   let settingsOpen = $state(false);
+  let sniffedMedia = $state(null); // 浏览器扩展嗅探到的批量候选：{ candidates, pageTitle? } 或 null
   let deleteTargets = $state([]);
   let deleteCancel = $state();
   let menu = $state(null); // { task, x, y }
@@ -229,6 +232,8 @@
         await register(
           onExternalDownload(({ url, filename }) => openAdd(url, filename ?? "")),
         );
+        // 浏览器扩展嗅探到的一批媒体：弹出批量确认对话框。
+        await register(onSniffedMedia((payload) => (sniffedMedia = payload)));
 
         const [initialTasks, loadedSettings, launchUrl] = await Promise.all([
           listTasks(),
@@ -531,6 +536,17 @@
     onsubmit={submitAdd}
     onclose={() => (addOpen = false)}
   />
+{/if}
+
+{#if sniffedMedia}
+  {#key sniffedMedia}
+    <SniffedMediaDialog
+      media={sniffedMedia}
+      downloadDir={settings?.download_dir}
+      onDownload={downloadMedia}
+      onclose={() => (sniffedMedia = null)}
+    />
+  {/key}
 {/if}
 
 {#if settingsOpen && settings}

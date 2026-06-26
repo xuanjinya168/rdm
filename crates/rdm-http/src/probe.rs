@@ -3,8 +3,8 @@
 use percent_encoding::percent_decode_str;
 use rdm_domain::validation::sanitize_filename;
 use reqwest::header::{
-    HeaderMap, HeaderName, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, ETAG, LAST_MODIFIED,
-    RANGE,
+    HeaderMap, HeaderName, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG,
+    LAST_MODIFIED, RANGE,
 };
 use url::Url;
 
@@ -96,9 +96,14 @@ pub async fn probe_url(
     let etag = pick(&ETAG);
     let last_modified = pick(&LAST_MODIFIED);
     let disposition = pick(&CONTENT_DISPOSITION);
+    let content_type = pick(&CONTENT_TYPE);
 
     Ok(ProbeResult {
-        filename: filename_from_headers(disposition.as_deref(), &final_url),
+        filename: filename_from_headers(
+            disposition.as_deref(),
+            &final_url,
+            content_type.as_deref(),
+        ),
         final_url,
         total_size,
         supports_ranges,
@@ -145,13 +150,64 @@ pub(crate) fn size_from_content_range(value: Option<&str>) -> Option<u64> {
     }
 }
 
+fn extension_from_content_type(content_type: Option<&str>) -> Option<&'static str> {
+    let mime = content_type?.split(';').next()?.trim().to_ascii_lowercase();
+    Some(match mime.as_str() {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/avif" => "avif",
+        "image/bmp" => "bmp",
+        "image/svg+xml" => "svg",
+        "image/tiff" => "tif",
+        "video/mp4" => "mp4",
+        "video/webm" => "webm",
+        "video/quicktime" => "mov",
+        "audio/mpeg" => "mp3",
+        "audio/mp4" => "m4a",
+        "audio/wav" | "audio/x-wav" => "wav",
+        "application/pdf" => "pdf",
+        "application/zip" => "zip",
+        "application/json" => "json",
+        _ => return None,
+    })
+}
+
+fn has_extension(filename: &str) -> bool {
+    let Some((_, ext)) = filename.rsplit_once('.') else {
+        return false;
+    };
+    !ext.is_empty()
+        && ext.len() <= 12
+        && ext.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+fn append_extension_if_missing(filename: String, content_type: Option<&str>) -> String {
+    if has_extension(&filename) {
+        return filename;
+    }
+    let Some(ext) = extension_from_content_type(content_type) else {
+        return filename;
+    };
+    let suffix = format!(".{ext}");
+    let max_base = 240usize.saturating_sub(suffix.chars().count());
+    let base = filename.chars().take(max_base).collect::<String>();
+    format!("{base}{suffix}")
+}
+
 /// 根据 `Content-Disposition` 决定输出文件名，若无则回退到 URL 路径
-/// 的最后一段；最终结果都会进行百分号解码与 Windows 安全的清理。
-pub(crate) fn filename_from_headers(content_disposition: Option<&str>, url: &str) -> String {
+/// 的最后一段；如果文件名无扩展名，使用 `Content-Type` 补全常见类型。
+/// 最终结果都会进行百分号解码与 Windows 安全的清理。
+pub(crate) fn filename_from_headers(
+    content_disposition: Option<&str>,
+    url: &str,
+    content_type: Option<&str>,
+) -> String {
     if let Some(disposition) = content_disposition {
         if let Some(name) = parse_content_disposition_filename(disposition) {
             if !name.is_empty() {
-                return sanitize_filename(&name);
+                return append_extension_if_missing(sanitize_filename(&name), content_type);
             }
         }
     }
@@ -164,7 +220,7 @@ pub(crate) fn filename_from_headers(content_disposition: Option<&str>, url: &str
         .find(|segment| !segment.is_empty())
         .unwrap_or("");
     let name = if base.is_empty() { "download" } else { base };
-    sanitize_filename(name)
+    append_extension_if_missing(sanitize_filename(name), content_type)
 }
 
 /// 从 `Content-Disposition` 头中解析文件名，优先使用 RFC 5987
@@ -242,12 +298,32 @@ mod tests {
     #[test]
     fn filename_falls_back_to_url_path() {
         assert_eq!(
-            filename_from_headers(None, "https://example.test/path/my%20file.bin"),
+            filename_from_headers(None, "https://example.test/path/my%20file.bin", None),
             "my file.bin"
         );
         assert_eq!(
-            filename_from_headers(None, "https://example.test"),
+            filename_from_headers(None, "https://example.test", None),
             "download"
+        );
+    }
+
+    #[test]
+    fn filename_uses_content_type_when_url_has_no_extension() {
+        assert_eq!(
+            filename_from_headers(
+                None,
+                "https://img1.baidu.com/it/u=910271416,2899451860&fm=253&fmt=auto&app=138&f=JPEG?w=751&h=500",
+                Some("image/jpeg; charset=binary")
+            ),
+            "u=910271416,2899451860&fm=253&fmt=auto&app=138&f=JPEG.jpg"
+        );
+        assert_eq!(
+            filename_from_headers(None, "https://example.test/image", Some("image/png")),
+            "image.png"
+        );
+        assert_eq!(
+            filename_from_headers(None, "https://example.test/image.jpg", Some("image/png")),
+            "image.jpg"
         );
     }
 
@@ -256,7 +332,8 @@ mod tests {
         assert_eq!(
             filename_from_headers(
                 Some("attachment; filename=\"fixture.bin\""),
-                "https://example.test/range.bin"
+                "https://example.test/range.bin",
+                None
             ),
             "fixture.bin"
         );
@@ -264,9 +341,18 @@ mod tests {
         assert_eq!(
             filename_from_headers(
                 Some("attachment; filename=\"x\"; filename*=UTF-8''na%C3%AFve.txt"),
-                "https://example.test/range.bin"
+                "https://example.test/range.bin",
+                None
             ),
             "naïve.txt"
+        );
+        assert_eq!(
+            filename_from_headers(
+                Some("attachment; filename=\"download\""),
+                "https://example.test/range",
+                Some("application/pdf")
+            ),
+            "download.pdf"
         );
     }
 

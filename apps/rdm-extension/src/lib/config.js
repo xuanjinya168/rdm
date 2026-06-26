@@ -6,6 +6,8 @@ export const BRIDGE_BASE_URL = `http://${BRIDGE_HOST}:${BRIDGE_PORT}`;
 
 export const HEALTH_URL = `${BRIDGE_BASE_URL}/health`;
 export const DOWNLOADS_URL = `${BRIDGE_BASE_URL}/downloads`;
+// 批量媒体候选：一次性推送一组嗅探结果，桌面端弹出批量确认对话框。
+export const MEDIA_CANDIDATES_URL = `${BRIDGE_BASE_URL}/media-candidates`;
 
 // chrome.storage.local 中的键。
 export const STORAGE_KEYS = {
@@ -16,8 +18,9 @@ export const STORAGE_KEYS = {
 };
 
 // 默认设置：导入后合并到 chrome.storage.local。
+// interceptEnabled 默认关闭——与 README 和弹窗显示一致，避免一装就抢走所有下载。
 export const DEFAULT_SETTINGS = {
-  [STORAGE_KEYS.interceptEnabled]: true,
+  [STORAGE_KEYS.interceptEnabled]: false,
 };
 
 // 拦截过滤规则：低于此字节数的下载不交给 RDM（避免为小文件启动桌面端）。

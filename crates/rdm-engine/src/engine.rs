@@ -420,7 +420,7 @@ impl EngineInner {
             st.task.last_modified = probe.last_modified.clone();
             st.task.actual_sha256 = None;
             st.task.filename = if had_filename {
-                sanitize_filename(&filename)
+                filename_with_probe_extension(&filename, &probe.filename)
             } else {
                 sanitize_filename(&probe.filename)
             };
@@ -1028,6 +1028,35 @@ fn validate_partial_response(
     Ok(range_len)
 }
 
+fn file_extension(filename: &str) -> Option<&str> {
+    let (_, ext) = filename.rsplit_once('.')?;
+    if ext.is_empty()
+        || ext.len() > 12
+        || !ext.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return None;
+    }
+    Some(ext)
+}
+
+fn append_extension(filename: String, ext: &str) -> String {
+    let suffix = format!(".{ext}");
+    let max_base = 240usize.saturating_sub(suffix.chars().count());
+    let base = filename.chars().take(max_base).collect::<String>();
+    format!("{base}{suffix}")
+}
+
+fn filename_with_probe_extension(requested: &str, probed: &str) -> String {
+    let filename = sanitize_filename(requested);
+    if file_extension(&filename).is_some() {
+        return filename;
+    }
+    match file_extension(probed) {
+        Some(ext) => append_extension(filename, ext),
+        None => filename,
+    }
+}
+
 fn to_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut hex = String::with_capacity(bytes.len() * 2);
@@ -1060,6 +1089,26 @@ mod tests {
         let mut hasher = Sha256::new();
         hasher.update(data);
         to_hex(&hasher.finalize())
+    }
+
+    #[test]
+    fn explicit_filename_without_extension_reuses_probed_extension() {
+        assert_eq!(
+            filename_with_probe_extension("custom name", "download.jpg"),
+            "custom name.jpg"
+        );
+        assert_eq!(
+            filename_with_probe_extension("already.png", "download.jpg"),
+            "already.png"
+        );
+        assert_eq!(
+            filename_with_probe_extension("bad/name", "download.mp4"),
+            "bad_name.mp4"
+        );
+        assert_eq!(
+            filename_with_probe_extension("custom", "download"),
+            "custom"
+        );
     }
 
     async fn start_server(data: Arc<Vec<u8>>) -> String {

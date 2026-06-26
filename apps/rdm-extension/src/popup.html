@@ -11,31 +11,67 @@
       <img src="../icons/icon48.png" alt="" class="logo" width="28" height="28" />
       <div>
         <h1>RDM Downloader</h1>
-        <p class="subtitle">把下载交给 RDM 桌面端</p>
+        <p class="subtitle">嗅探页面媒体 · 把下载交给 RDM</p>
       </div>
     </header>
 
     <main class="body">
-      <label class="row toggle">
-        <span class="label">自动拦截下载</span>
-        <input type="checkbox" id="intercept-toggle" />
-        <span class="switch" aria-hidden="true"></span>
-      </label>
-      <p class="hint" id="toggle-hint">关闭时仅使用右键菜单手动交给 RDM。</p>
-
-      <div class="row bridge">
-        <div>
-          <div class="label">桌面端连接</div>
-          <div class="bridge-status" id="bridge-status">检测中…</div>
+      <!-- 媒体嗅探 -->
+      <section class="sniff">
+        <div class="sniff-actions">
+          <button type="button" id="sniff-btn" class="btn btn-primary">嗅探当前页面</button>
+          <label class="net-toggle">
+            <input type="checkbox" id="net-toggle" />
+            <span>网络嗅探</span>
+          </label>
         </div>
-        <button type="button" id="test-btn" class="btn">测试连接</button>
-      </div>
+        <p class="hint" id="net-hint">开启网络嗅探需授权访问站点（用于捕获视频/m3u8 等网络请求）。</p>
 
-      <div class="bridge-url" id="bridge-url"></div>
+        <div class="filters" id="filters" hidden>
+          <button type="button" class="chip is-active" data-kind="all">全部 <span class="chip-n" data-count="all">0</span></button>
+          <button type="button" class="chip" data-kind="image">图片 <span class="chip-n" data-count="image">0</span></button>
+          <button type="button" class="chip" data-kind="video">视频 <span class="chip-n" data-count="video">0</span></button>
+          <button type="button" class="chip" data-kind="audio">音频 <span class="chip-n" data-count="audio">0</span></button>
+          <button type="button" class="chip" data-kind="manifest">流媒体 <span class="chip-n" data-count="manifest">0</span></button>
+        </div>
+
+        <div class="bulk" id="bulk" hidden>
+          <label class="select-all">
+            <input type="checkbox" id="select-all" />
+            <span>全选</span>
+          </label>
+          <button type="button" id="send-selected" class="btn" disabled>全部发送至 RDM</button>
+        </div>
+
+        <div class="media-list" id="media-list"></div>
+        <p class="sniff-status" id="sniff-status"></p>
+      </section>
+
+      <hr class="divider" />
+
+      <!-- 设置 -->
+      <section class="settings">
+        <label class="row toggle">
+          <span class="label">自动拦截下载</span>
+          <input type="checkbox" id="intercept-toggle" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <p class="hint" id="toggle-hint">关闭时仅使用右键菜单手动交给 RDM。</p>
+
+        <div class="row bridge">
+          <div>
+            <div class="label">桌面端连接</div>
+            <div class="bridge-status" id="bridge-status">检测中…</div>
+          </div>
+          <button type="button" id="test-btn" class="btn">测试连接</button>
+        </div>
+
+        <div class="bridge-url" id="bridge-url"></div>
+      </section>
     </main>
 
     <footer class="footer">
-      <span>仅监听 127.0.0.1</span>
+      <span>仅监听 127.0.0.1 · 嗅探仅在点击时针对当前页</span>
     </footer>
 
     <script type="module" src="popup.js"></script>
