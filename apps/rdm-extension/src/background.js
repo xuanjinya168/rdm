@@ -54,8 +54,11 @@ async function maybeNotifyOffline() {
  * @param {boolean} [opts.notifyOnError] - 默认 true。
  */
 async function handoffToRdm(url, opts = {}) {
-  const { filename, notifyOnError = true } = opts;
-  const result = await postDownload(url, filename ? { filename } : {});
+  const { filename, referrer, notifyOnError = true } = opts;
+  const result = await postDownload(url, {
+    ...(filename ? { filename } : {}),
+    ...(referrer ? { referrer } : {}),
+  });
   if (!result.ok && notifyOnError) {
     await maybeNotifyOffline();
   }
@@ -106,7 +109,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   const url =
     info.linkUrl || info.srcUrl || info.frameUrl || info.pageUrl;
   if (!url) return;
-  await handoffToRdm(url);
+  await handoffToRdm(url, { referrer: info.pageUrl || info.frameUrl });
 });
 
 /** 取文件名部分（去掉目录路径），供桌面端命名。 */

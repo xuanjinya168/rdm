@@ -10,6 +10,8 @@ use url::Url;
 
 use crate::error::HttpError;
 
+const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
 /// 一次下载运行中由 Provider 解析出的 URL 与请求头。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreparedDownload {
@@ -66,8 +68,76 @@ impl DownloadProvider for HttpDownloadProvider {
     }
 
     fn prepare(&self, task: &DownloadTask) -> Result<PreparedDownload, HttpError> {
-        Ok(PreparedDownload::new(task.url.clone()))
+        let mut prepared = PreparedDownload::new(task.url.clone());
+        if let Some(referer) =
+            site_referer(&task.url).or_else(|| task.referrer.as_deref().and_then(valid_http_referrer))
+        {
+            prepared
+                .headers
+                .push(("Referer".to_string(), referer.to_string()));
+        }
+        if needs_browser_user_agent(&task.url, task.referrer.as_deref()) {
+            prepared
+                .headers
+                .push(("User-Agent".to_string(), BROWSER_USER_AGENT.to_string()));
+        }
+        Ok(prepared)
     }
+}
+
+fn site_referer(url: &str) -> Option<&'static str> {
+    let parsed = Url::parse(url).ok()?;
+    if parsed.scheme() != "https" {
+        return None;
+    }
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    site_root_referer(&host)
+}
+
+fn valid_http_referrer(referrer: &str) -> Option<&str> {
+    let parsed = Url::parse(referrer).ok()?;
+    matches!(parsed.scheme(), "http" | "https").then_some(referrer)
+}
+
+fn needs_browser_user_agent(url: &str, referrer: Option<&str>) -> bool {
+    if referrer.is_some_and(is_browser_site_url) {
+        return true;
+    }
+    is_browser_site_url(url)
+}
+
+fn is_browser_site_url(url: &str) -> bool {
+    let Ok(parsed) = Url::parse(url) else {
+        return false;
+    };
+    parsed
+        .host_str()
+        .map(|host| site_root_referer(&host.to_ascii_lowercase()).is_some())
+        .unwrap_or(false)
+}
+
+/// 需要附带站点 Referer / 浏览器 UA 才能直连下载的站点，及其根 Referer。
+/// 匹配按根域（含子域）进行；新增站点只需在此追加一行。
+const SITE_REFERERS: &[(&str, &str)] = &[
+    ("ddys.ai", "https://ddys.ai/"),
+    ("ddys.app", "https://ddys.app/"),
+    ("ddys.io", "https://ddys.io/"),
+    ("ddys.tv", "https://ddys.tv/"),
+    ("jable.tv", "https://jable.tv/"),
+    ("movie.douban.com", "https://movie.douban.com/"),
+    ("search.douban.com", "https://search.douban.com/"),
+    ("rargb.to", "https://rargb.to/"),
+];
+
+fn site_root_referer(host: &str) -> Option<&'static str> {
+    SITE_REFERERS
+        .iter()
+        .find_map(|(root, referer)| host_matches(host, root).then_some(*referer))
+}
+
+/// `host` 是否等于 `root` 或其子域（`*.root`）。零分配的后缀匹配。
+fn host_matches(host: &str, root: &str) -> bool {
+    host == root || host.strip_suffix(root).is_some_and(|prefix| prefix.ends_with('.'))
 }
 
 /// 有序的 Provider 列表；首个能处理该 URL 的 Provider 胜出。
@@ -117,6 +187,12 @@ mod tests {
         DownloadTask::create(url, "C:/dl", 8, "", "").unwrap()
     }
 
+    fn task_with_referrer(url: &str, referrer: &str) -> DownloadTask {
+        let mut task = task(url);
+        task.referrer = Some(referrer.to_string());
+        task
+    }
+
     #[test]
     fn http_provider_handles_http_and_https() {
         let provider = HttpDownloadProvider;
@@ -134,6 +210,100 @@ mod tests {
             .unwrap();
         assert_eq!(prepared.url, "https://example.test/a.bin");
         assert!(prepared.headers.is_empty());
+    }
+
+    #[test]
+    fn http_provider_sets_site_referer() {
+        let provider = HttpDownloadProvider;
+        for (url, referer) in [
+            ("https://v2.ddys.ai/v2/movie/file.mp4", "https://ddys.ai/"),
+            ("https://video.ddys.app/v2/movie/file.mp4", "https://ddys.app/"),
+            ("https://cdn.ddys.io/v2/movie/file.mp4", "https://ddys.io/"),
+            ("https://media.ddys.tv/v2/movie/file.mp4", "https://ddys.tv/"),
+            ("https://v1.jable.tv/hls/video/index.m3u8", "https://jable.tv/"),
+            (
+                "https://movie.douban.com/subject/123/",
+                "https://movie.douban.com/",
+            ),
+            (
+                "https://search.douban.com/movie/subject_search",
+                "https://search.douban.com/",
+            ),
+            ("https://rargb.to/torrent/test", "https://rargb.to/"),
+        ] {
+            let prepared = provider.prepare(&task(url)).unwrap();
+            assert_eq!(
+                prepared.headers,
+                vec![
+                    ("Referer".to_string(), referer.to_string()),
+                    ("User-Agent".to_string(), BROWSER_USER_AGENT.to_string()),
+                ],
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn http_provider_does_not_set_ddys_referer_for_other_hosts() {
+        let provider = HttpDownloadProvider;
+        for url in [
+            "https://example.test/file.mp4",
+            "https://notddys.ai.example.test/file.mp4",
+            "https://movie.douban.com.example.test/file.mp4",
+            "https://notrargb.to.example.test/file.mp4",
+        ] {
+            let prepared = provider.prepare(&task(url)).unwrap();
+            assert!(prepared.headers.is_empty());
+        }
+
+        let prepared = provider
+            .prepare(&task("http://v2.ddys.ai/file.mp4"))
+            .unwrap();
+        assert_eq!(
+            prepared.headers,
+            vec![("User-Agent".to_string(), BROWSER_USER_AGENT.to_string())]
+        );
+    }
+
+    #[test]
+    fn http_provider_uses_task_referrer_for_cdn_urls() {
+        let provider = HttpDownloadProvider;
+        let prepared = provider
+            .prepare(&task_with_referrer(
+                "https://cdn.example.test/video/index.m3u8",
+                "https://ddys.tv/drama/example/",
+            ))
+            .unwrap();
+
+        assert_eq!(
+            prepared.headers,
+            vec![
+                (
+                    "Referer".to_string(),
+                    "https://ddys.tv/drama/example/".to_string()
+                ),
+                ("User-Agent".to_string(), BROWSER_USER_AGENT.to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn http_provider_prefers_target_site_referer_over_cross_site_referrer() {
+        let provider = HttpDownloadProvider;
+        let prepared = provider
+            .prepare(&task_with_referrer(
+                "https://v2.ddys.ai/v2/movie/file.mp4",
+                "https://ddys.io/movie/source-page",
+            ))
+            .unwrap();
+
+        assert_eq!(
+            prepared.headers,
+            vec![
+                ("Referer".to_string(), "https://ddys.ai/".to_string()),
+                ("User-Agent".to_string(), BROWSER_USER_AGENT.to_string()),
+            ]
+        );
     }
 
     #[test]

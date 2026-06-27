@@ -126,6 +126,8 @@ pub struct DownloadTask {
     #[serde(default)]
     pub actual_sha256: Option<String>,
     #[serde(default)]
+    pub referrer: Option<String>,
+    #[serde(default)]
     pub error: Option<String>,
     pub created_at: f64,
     pub updated_at: f64,
@@ -161,6 +163,7 @@ impl DownloadTask {
             last_modified: None,
             expected_sha256: checksum,
             actual_sha256: None,
+            referrer: None,
             error: None,
             created_at: now,
             updated_at: now,

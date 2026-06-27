@@ -210,7 +210,7 @@ pub async fn probe_segment_sizes(
     }
 
     let headers = request_headers.clone();
-    let results: Vec<(Target, Option<u64>)> = futures_util::stream::iter(targets.into_iter())
+    let results: Vec<(Target, Option<u64>)> = futures_util::stream::iter(targets)
         .map(|(target, url)| {
             let headers = headers.clone();
             let client = client.clone();

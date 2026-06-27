@@ -66,8 +66,8 @@ impl DownloadDatabase {
                     id, url, destination, filename, status, total_size,
                     downloaded, connections, supports_ranges, etag,
                     last_modified, expected_sha256, actual_sha256,
-                    error, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                    referrer, error, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
                 ON CONFLICT(id) DO UPDATE SET
                     url=excluded.url,
                     destination=excluded.destination,
@@ -81,6 +81,7 @@ impl DownloadDatabase {
                     last_modified=excluded.last_modified,
                     expected_sha256=excluded.expected_sha256,
                     actual_sha256=excluded.actual_sha256,
+                    referrer=excluded.referrer,
                     error=excluded.error,
                     updated_at=excluded.updated_at",
                 params![
@@ -97,6 +98,7 @@ impl DownloadDatabase {
                     task.last_modified,
                     task.expected_sha256,
                     task.actual_sha256,
+                    task.referrer,
                     task.error,
                     task.created_at,
                     task.updated_at,
@@ -115,7 +117,7 @@ impl DownloadDatabase {
                 "SELECT id, url, destination, filename, status, total_size,
                         downloaded, connections, supports_ranges, etag,
                         last_modified, expected_sha256, actual_sha256,
-                        error, created_at, updated_at
+                        referrer, error, created_at, updated_at
                  FROM tasks ORDER BY created_at DESC",
             )?;
             let tasks = stmt
@@ -148,6 +150,7 @@ impl DownloadDatabase {
                         last_modified: row.get("last_modified")?,
                         expected_sha256: row.get("expected_sha256")?,
                         actual_sha256: row.get("actual_sha256")?,
+                        referrer: row.get("referrer")?,
                         error,
                         created_at: row.get("created_at")?,
                         updated_at: row.get("updated_at")?,
@@ -288,6 +291,7 @@ mod tests {
         task.status = TaskStatus::Downloading;
         task.filename = "file.bin".to_string();
         task.total_size = Some(100);
+        task.referrer = Some("https://example.test/page".to_string());
         db.save_task(&task).unwrap();
         db.save_segments(
             &task.id,
@@ -310,6 +314,7 @@ mod tests {
         // 崩溃前持久化的活动状态在恢复时变为暂停。
         assert_eq!(loaded.status, TaskStatus::Paused);
         assert_eq!(loaded.filename, "file.bin");
+        assert_eq!(loaded.referrer.as_deref(), Some("https://example.test/page"));
         assert_eq!(loaded.total_size, Some(100));
         assert_eq!(
             segments.iter().map(|s| s.downloaded).collect::<Vec<_>>(),

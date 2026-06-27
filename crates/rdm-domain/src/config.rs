@@ -39,6 +39,9 @@ pub struct AppSettings {
     pub retry_count: i64,
     pub clipboard_monitoring: bool,
     pub minimize_to_tray: bool,
+    /// 为 true 时，HLS 下载完成后用硬件编码器（GPU）重新编码为 mp4；
+    /// 默认 false：仅无损封装（remux）。检测不到可用 GPU 时自动回退为封装。
+    pub hls_transcode: bool,
     pub theme: String,
     /// 为 true 时，出站下载 / 解析请求会通过 `proxy_url` 转发。
     pub proxy_enabled: bool,
@@ -60,6 +63,7 @@ impl Default for AppSettings {
             retry_count: 4,
             clipboard_monitoring: true,
             minimize_to_tray: true,
+            hls_transcode: false,
             theme: "dark".to_string(),
             proxy_enabled: false,
             proxy_url: String::new(),
@@ -102,6 +106,7 @@ impl AppSettings {
             },
             clipboard_monitoring: self.clipboard_monitoring,
             minimize_to_tray: self.minimize_to_tray,
+            hls_transcode: self.hls_transcode,
             theme: if matches!(self.theme.as_str(), "light" | "dark") {
                 self.theme.clone()
             } else {
@@ -180,6 +185,7 @@ impl AppSettings {
             retry_count: bounded("retry_count", 4, 0, MAX_RETRY_COUNT),
             clipboard_monitoring: boolean("clipboard_monitoring", true),
             minimize_to_tray: boolean("minimize_to_tray", true),
+            hls_transcode: boolean("hls_transcode", false),
             theme,
             proxy_enabled: boolean("proxy_enabled", false),
             proxy_url,
@@ -345,6 +351,7 @@ mod tests {
             retry_count: 999,
             clipboard_monitoring: false,
             minimize_to_tray: false,
+            hls_transcode: false,
             theme: "unsupported".to_string(),
             proxy_enabled: false,
             proxy_url: "  ".to_string(),

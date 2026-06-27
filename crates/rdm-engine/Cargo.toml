@@ -11,7 +11,7 @@ rdm-storage.workspace = true
 rdm-http.workspace = true
 reqwest.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["time", "sync", "fs", "io-util"] }
+tokio = { workspace = true, features = ["time", "sync", "fs", "io-util", "process"] }
 tokio-util.workspace = true
 futures-util.workspace = true
 sha2.workspace = true

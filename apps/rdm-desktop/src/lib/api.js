@@ -7,8 +7,8 @@ export const getSettings = () => invoke("get_settings");
 export const takeLaunchUrl = () => invoke("take_launch_url");
 export const saveSettings = (settings) => invoke("save_settings", { settings });
 
-export const addDownload = ({ url, destination, connections, filename, sha256 }) =>
-  invoke("add_download", { url, destination, connections, filename, sha256 });
+export const addDownload = ({ url, destination, connections, filename, sha256, referrer }) =>
+  invoke("add_download", { url, destination, connections, filename, sha256, referrer });
 
 export const startTask = (id) => invoke("start_task", { id });
 export const pauseTask = (id) => invoke("pause_task", { id });

@@ -169,6 +169,11 @@ function byKindThenName(a, b) {
 const KIND_LABEL = { image: "图片", video: "视频", audio: "音频", manifest: "流媒体" };
 const SOURCE_LABEL = { dom: "页面", network: "网络", performance: "已加载" };
 
+function isDownloadable(c) {
+  if (c.kind !== "manifest") return true;
+  return (c.ext || "").toLowerCase() === "m3u8";
+}
+
 function counts() {
   const c = { all: candidates.length, image: 0, video: 0, audio: 0, manifest: 0 };
   for (const x of candidates) c[x.kind] = (c[x.kind] || 0) + 1;
@@ -246,11 +251,10 @@ function renderCard(cand) {
   const send = document.createElement("button");
   send.type = "button";
   send.className = "btn btn-send";
-  if (cand.kind === "manifest") {
-    // 流媒体仅识别展示，下载引擎后置迭代（M5）。
+  if (!isDownloadable(cand)) {
     send.disabled = true;
     send.textContent = "仅识别";
-    send.title = "流媒体（m3u8/mpd）暂仅识别，下载引擎后置迭代";
+    send.title = "DASH（mpd）暂不支持下载";
   } else {
     send.textContent = "发送";
     send.addEventListener("click", () => sendOne(cand, send));
@@ -313,7 +317,10 @@ async function sendOne(cand, btn) {
   btn.disabled = true;
   const prev = btn.textContent;
   btn.textContent = "发送中…";
-  const res = await postDownload(cand.url, cand.filename ? { filename: cand.filename } : {});
+  const res = await postDownload(cand.url, {
+    ...(cand.filename ? { filename: cand.filename } : {}),
+    ...(cand.pageUrl ? { referrer: cand.pageUrl } : {}),
+  });
   if (res.ok) {
     btn.textContent = "已发送";
   } else {
@@ -327,11 +334,10 @@ async function sendOne(cand, btn) {
 }
 
 sendSelectedBtn.addEventListener("click", async () => {
-  // 流媒体不发送（仅识别）；一次性批量推送到桌面端的批量确认对话框。
-  const targets = candidates.filter((c) => selected.has(c.url) && c.kind !== "manifest");
+  const targets = candidates.filter((c) => selected.has(c.url) && isDownloadable(c));
   const skipped = selected.size - targets.length;
   if (targets.length === 0) {
-    setSniffStatus("所选均为流媒体，暂不支持下载。");
+    setSniffStatus("所选项目暂不支持下载。");
     return;
   }
   sendSelectedBtn.disabled = true;
@@ -345,12 +351,13 @@ sendSelectedBtn.addEventListener("click", async () => {
     height: c.height,
     duration: c.duration,
     bytes: c.bytes,
+    pageUrl: c.pageUrl,
   }));
   const meta = { pageUrl: targets[0].pageUrl, pageTitle: targets[0].pageTitle };
   const res = await postMediaCandidates(payload, meta);
   if (res.ok) {
     setSniffStatus(
-      `已发送 ${targets.length} 项到 RDM 确认${skipped ? `，跳过流媒体 ${skipped}` : ""}。`,
+      `已发送 ${targets.length} 项到 RDM 确认${skipped ? `，跳过暂不支持项 ${skipped}` : ""}。`,
     );
   } else {
     setSniffStatus(`发送失败：${res.error || "桌面端未运行？"}`);

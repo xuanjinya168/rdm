@@ -3453,6 +3453,7 @@ dependencies = [
 name = "rdm-service"
 version = "0.2.1"
 dependencies = [
+ "log",
  "rdm-domain",
  "rdm-engine",
  "rdm-http",
@@ -4889,6 +4890,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

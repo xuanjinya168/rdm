@@ -26,6 +26,7 @@ use rdm_storage::DownloadDatabase;
 use crate::error::EngineError;
 use crate::files::{publish_part_file, reserve_part_file};
 use crate::hls::{self, ByteRange, MediaPlaylist, Playlist};
+use crate::postprocess::{self, PostProcess};
 use crate::rate_limit::RateLimiter;
 use crate::sparse::mark_sparse;
 
@@ -232,6 +233,7 @@ pub struct DownloadEngine {
     callback: UpdateCallback,
     retry_count: u32,
     signals: Arc<Signals>,
+    postprocess: Option<PostProcess>,
 }
 
 impl DownloadEngine {
@@ -254,7 +256,15 @@ impl DownloadEngine {
             callback,
             retry_count,
             signals: Arc::new(Signals::new()),
+            postprocess: None,
         }
+    }
+
+    /// 配置 HLS 后处理（把下载得到的裸流封装/转码为标准 `.mp4`）。
+    /// `None`（默认）表示保留裸流。
+    pub fn with_postprocess(mut self, postprocess: Option<PostProcess>) -> Self {
+        self.postprocess = postprocess;
+        self
     }
 
     /// 运行时暂停/取消此引擎的句柄。
@@ -282,6 +292,7 @@ impl DownloadEngine {
             callback: self.callback,
             retry_count: self.retry_count,
             signals: self.signals,
+            postprocess: self.postprocess,
             prepared_headers,
             download_url: Mutex::new(prepared.url.clone()),
             state: Mutex::new(EngineState::new(self.task)),
@@ -337,6 +348,7 @@ struct EngineInner {
     callback: UpdateCallback,
     retry_count: u32,
     signals: Arc<Signals>,
+    postprocess: Option<PostProcess>,
     prepared_headers: HeaderMap,
     download_url: Mutex<String>,
     state: Mutex<EngineState>,
@@ -444,7 +456,9 @@ impl EngineInner {
                     "HLS concatenated size mismatch ({concatenated_bytes}/{actual_bytes} bytes)"
                 )));
             }
-            Ok(actual_bytes)
+            // 把拼接出的裸流（.ts/.m4s）封装或转码为标准 .mp4（按配置，可能用 GPU）。
+            // 返回最终落盘文件的字节数（转码会改变体积）。
+            self.finalize_container(fmp4).await
         }
         .await;
 
@@ -607,28 +621,47 @@ impl EngineInner {
             self.notify(true)?;
         }
 
-        // 顺序下载媒体分片：分片之间相互独立，但为了保证 EngineState
-        // （std::sync::Mutex）在受限线程数的运行时下不与下载 worker 互相阻塞，
-        // 这里串行下载、逐片更新进度。每片解密后写入按 index 命名的临时文件，
-        // 最后由 concatenate_hls_segments 按顺序拼接（init 在最前）。
-        for segment in &media.segments {
-            self.check_interrupted()?;
-            let encrypted_or_plain = self
-                .download_hls_segment(Some(segment.index), &segment.uri, segment.byte_range)
-                .await?;
-            let decoded = if let Some(encryption) = &segment.encryption {
-                let key = keys.get(&encryption.uri).ok_or_else(|| {
-                    EngineError::Download(format!("Missing HLS AES-128 key {}", encryption.uri))
-                })?;
-                let iv = segment
-                    .iv()
-                    .ok_or_else(|| EngineError::Download("Missing HLS AES-128 IV".to_string()))?;
-                hls::decrypt_aes128_cbc(&encrypted_or_plain, key, &iv)?
-            } else {
-                encrypted_or_plain
-            };
-            std::fs::write(hls_segment_path(temp_dir, segment.index), &decoded)?;
-            let len = decoded.len() as u64;
+        // 媒体分片彼此独立，可并发下载。buffer_unordered 在单个任务上并发驱动
+        // 至多 concurrency 个分片请求（仅在 await 点交错），因此多个 HTTP 请求
+        // 可同时在途、以网络延迟相互重叠，又不会让 EngineState（std::sync::Mutex）
+        // 跨 await 持有或被并行争用。每片解密后写入按 index 命名的临时文件，
+        // 完成顺序无关，最后由 concatenate_hls_segments 按 index 顺序拼接（init 在最前）。
+        // 用 Range<usize> 而非 segments.iter() 驱动流：借用切片迭代器会让 future
+        // 触发「slice::Iter 生命周期不够一般」的 rustc 限制（在 tokio::spawn 的引擎
+        // 任务里会编译失败），改为按下标在闭包内取分片即可规避。
+        let concurrency = self.hls_concurrency(media.segments.len());
+        let mut downloads = futures_util::stream::iter(0..media.segments.len())
+            .map(|i| {
+                let segment = &media.segments[i];
+                async move {
+                    self.check_interrupted()?;
+                    let encrypted_or_plain = self
+                        .download_hls_segment(Some(segment.index), &segment.uri, segment.byte_range)
+                        .await?;
+                    let decoded = if let Some(encryption) = &segment.encryption {
+                        let key = keys.get(&encryption.uri).ok_or_else(|| {
+                            EngineError::Download(format!(
+                                "Missing HLS AES-128 key {}",
+                                encryption.uri
+                            ))
+                        })?;
+                        let iv = segment.iv().ok_or_else(|| {
+                            EngineError::Download("Missing HLS AES-128 IV".to_string())
+                        })?;
+                        hls::decrypt_aes128_cbc(&encrypted_or_plain, key, &iv)?
+                    } else {
+                        encrypted_or_plain
+                    };
+                    std::fs::write(hls_segment_path(temp_dir, segment.index), &decoded)?;
+                    Ok::<u64, EngineError>(decoded.len() as u64)
+                }
+            })
+            .buffer_unordered(concurrency);
+
+        // 分片完成顺序不确定，但进度累加与完整性校验都与顺序无关。
+        // 任一分片出错即向上传播；丢弃 stream 会取消其余在途请求。
+        while let Some(result) = downloads.next().await {
+            let len = result?;
             actual_bytes = actual_bytes.saturating_add(len);
             downloaded_bytes = downloaded_bytes.saturating_add(len);
             {
@@ -776,6 +809,43 @@ impl EngineInner {
             total = total.saturating_add(bytes.len() as u64);
         }
         Ok(total)
+    }
+
+    /// 下载并拼接完成后，按 [`PostProcess`] 配置把裸流（`.ts`/`.m4s`）
+    /// 封装（remux，无损）或转码为标准 `.mp4`。未配置或 `Off` 时保持裸流。
+    /// 返回最终落盘文件的字节数（转码会改变体积）。
+    async fn finalize_container(&self, fmp4: bool) -> Result<u64, EngineError> {
+        let raw_part = self.state().task.part_path();
+        let raw_size = std::fs::metadata(&raw_part).map(|m| m.len()).unwrap_or(0);
+        let Some(post) = self.postprocess.as_ref().filter(|p| p.produces_mp4()) else {
+            return Ok(raw_size);
+        };
+        self.check_interrupted()?;
+
+        let (destination, raw_name) = {
+            let st = self.state();
+            (st.task.destination.clone(), st.task.filename.clone())
+        };
+        let mp4_name = with_replaced_extension(&raw_name, "mp4");
+        let (reserved, mp4_part) = reserve_part_file(Path::new(&destination), &mp4_name)?;
+
+        match postprocess::finalize(post, &raw_part, &mp4_part, fmp4).await {
+            Ok(true) => {
+                let mp4_size = std::fs::metadata(&mp4_part).map(|m| m.len()).unwrap_or(0);
+                let _ = std::fs::remove_file(&raw_part);
+                self.state().task.filename = reserved;
+                Ok(mp4_size)
+            }
+            // produces_mp4() 已过滤 Off，理论上不会到这里；保险起见保留裸流。
+            Ok(false) => {
+                let _ = std::fs::remove_file(&mp4_part);
+                Ok(raw_size)
+            }
+            Err(message) => {
+                let _ = std::fs::remove_file(&mp4_part);
+                Err(EngineError::Download(format!("HLS 转封装失败：{message}")))
+            }
+        }
     }
 
     async fn finish_hls(&self, actual: u64) -> Result<(), EngineError> {
@@ -1482,6 +1552,17 @@ fn with_hls_extension(filename: String, fmp4: bool) -> String {
         return format!("{}.{target}", &filename[..stem_len]);
     }
     append_extension(filename, target)
+}
+
+/// 把文件名的扩展名替换为 `ext`（无扩展名则追加）。用于裸流名 → `.mp4`。
+fn with_replaced_extension(filename: &str, ext: &str) -> String {
+    match file_extension(filename) {
+        Some(old) => {
+            let stem_len = filename.len().saturating_sub(old.len() + 1);
+            format!("{}.{ext}", &filename[..stem_len])
+        }
+        None => format!("{filename}.{ext}"),
+    }
 }
 
 fn hls_segment_path(temp_dir: &Path, index: usize) -> PathBuf {

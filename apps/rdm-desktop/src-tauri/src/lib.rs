@@ -95,18 +95,20 @@ fn add_download(
     connections: Option<u32>,
     filename: Option<String>,
     sha256: Option<String>,
+    referrer: Option<String>,
 ) -> Result<DownloadTask, String> {
     let destination = destination
         .filter(|d| !d.trim().is_empty())
         .unwrap_or_else(|| state.manager.settings().download_dir);
     state
         .manager
-        .add_download(
+        .add_download_with_referrer(
             &url,
             std::path::Path::new(&destination),
             connections,
             filename.as_deref().unwrap_or_default(),
             sha256.as_deref().unwrap_or_default(),
+            referrer.as_deref().unwrap_or_default(),
         )
         .map_err(|error| error.to_string())
 }
@@ -298,12 +300,20 @@ pub fn run() {
             // DownloadManager 通过 tokio::spawn 启动其调度器，因此必须在运行时
             // 上下文内构造；Tauri 的异步运行时是 tokio，生成的调度器存活时间
             // 超出此块。
+            // 打包随附的 ffmpeg（资源目录）；开发期可能不存在，管理器会自动
+            // 回退到 PATH 上的 ffmpeg，二者皆不可用时保留裸流。
+            let ffmpeg_name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+            let ffmpeg_candidate = app
+                .path()
+                .resolve(ffmpeg_name, tauri::path::BaseDirectory::Resource)
+                .ok();
             let manager = tauri::async_runtime::block_on(async {
                 DownloadManager::new(
                     database,
                     settings.clone(),
                     Arc::new(ProviderRegistry::default()),
                 )
+                .map(|manager| manager.with_ffmpeg(ffmpeg_candidate))
             })?;
 
             let emitter = app.handle().clone();

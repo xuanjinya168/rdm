@@ -6,7 +6,7 @@ use rusqlite::Connection;
 
 use crate::error::StoreError;
 
-pub const LATEST_SCHEMA_VERSION: i64 = 2;
+pub const LATEST_SCHEMA_VERSION: i64 = 3;
 
 fn create_initial_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
@@ -63,8 +63,29 @@ fn add_checksum_columns(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-const MIGRATIONS: &[fn(&Connection) -> rusqlite::Result<()>] =
-    &[create_initial_schema, add_checksum_columns];
+fn add_referrer_column(conn: &Connection) -> rusqlite::Result<()> {
+    let mut has_referrer = false;
+    {
+        let mut stmt = conn.prepare("PRAGMA table_info(tasks)")?;
+        let names = stmt.query_map([], |row| row.get::<_, String>("name"))?;
+        for name in names {
+            if name? == "referrer" {
+                has_referrer = true;
+                break;
+            }
+        }
+    }
+    if !has_referrer {
+        conn.execute("ALTER TABLE tasks ADD COLUMN referrer TEXT", [])?;
+    }
+    Ok(())
+}
+
+const MIGRATIONS: &[fn(&Connection) -> rusqlite::Result<()>] = &[
+    create_initial_schema,
+    add_checksum_columns,
+    add_referrer_column,
+];
 
 /// 将 `conn` 升级至 [`LATEST_SCHEMA_VERSION`]，仅应用比其当前
 /// `user_version` 更新的步骤。对于由未来更高 schema 版本写入的

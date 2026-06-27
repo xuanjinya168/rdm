@@ -19,6 +19,7 @@
   let speedKb = $state(untrack(() => Math.floor(settings.speed_limit_bytes / 1024)));
   let clipboard = $state(untrack(() => settings.clipboard_monitoring));
   let tray = $state(untrack(() => settings.minimize_to_tray));
+  let hlsTranscode = $state(untrack(() => settings.hls_transcode ?? false));
   let theme = $state(untrack(() => settings.theme ?? "dark"));
   let proxyEnabled = $state(untrack(() => settings.proxy_enabled ?? false));
   let proxyUrl = $state(untrack(() => settings.proxy_url ?? ""));
@@ -53,6 +54,7 @@
       speedKb,
       clipboard,
       tray,
+      hlsTranscode,
       theme,
       proxyEnabled,
       proxyUrl,
@@ -160,6 +162,10 @@
               <label class="check">
                 <input type="checkbox" bind:checked={tray} />
                 <span><strong>最小化到托盘</strong><small>关闭主窗口后继续运行下载任务</small></span>
+              </label>
+              <label class="check">
+                <input type="checkbox" bind:checked={hlsTranscode} />
+                <span><strong>流媒体下载后转码（GPU）</strong><small>默认仅无损封装为 mp4；开启后用显卡重新编码（无 GPU 时自动回退为封装）</small></span>
               </label>
             </div>
             {#if error}<p class="error">{error}</p>{/if}

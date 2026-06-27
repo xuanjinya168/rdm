@@ -1,15 +1,18 @@
 //! 下载管理器及其调度器。
 
 use std::collections::HashMap;
-use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::Notify;
 
 use rdm_domain::config::AppSettings;
 use rdm_domain::{DownloadTask, TaskStatus};
-use rdm_engine::{DownloadEngine, EngineHandle, RateLimiter, UpdateCallback};
+use rdm_engine::{
+    postprocess, DownloadEngine, EngineHandle, FinalizeMode, PostProcess, RateLimiter,
+    UpdateCallback,
+};
 use rdm_http::{build_client, ProviderRegistry, ProxyConfig};
 use rdm_storage::DownloadDatabase;
 
@@ -35,6 +38,15 @@ struct ManagerInner {
     state: Mutex<ManagerState>,
     /// 任务集或设置变更时唤醒调度器。
     wakeup: Notify,
+    /// HLS 后处理工具链，由 [`DownloadManager::with_ffmpeg`] 在后台探测后填充。
+    /// 未填充（或 ffmpeg 不可用）时，HLS 下载保留原始裸流。
+    media: OnceLock<MediaTools>,
+}
+
+/// 探测好的媒体工具链：ffmpeg 路径（确认可用）+ 可用的硬件编码器。
+struct MediaTools {
+    ffmpeg: Option<PathBuf>,
+    hw_encoder: Option<String>,
 }
 
 /// 持有下载队列并在活跃数上限内调度工作的管理器。
@@ -69,10 +81,22 @@ impl DownloadManager {
                 stopping: false,
             }),
             wakeup: Notify::new(),
+            media: OnceLock::new(),
         });
         let scheduler_inner = Arc::clone(&inner);
         tokio::spawn(async move { scheduler(scheduler_inner).await });
         Ok(Self { inner })
+    }
+
+    /// 配置 HLS 后处理用的 ffmpeg。`candidate` 为打包的 sidecar 路径（可选）；
+    /// 后台会校验其可用性，失败则回退到 PATH 上的 `ffmpeg`，并探测硬件编码器。
+    /// 全部不可用时后处理自动禁用（HLS 下载保留裸流）。不阻塞启动。
+    pub fn with_ffmpeg(self, candidate: Option<PathBuf>) -> Self {
+        let inner = Arc::clone(&self.inner);
+        tokio::spawn(async move {
+            let _ = inner.media.set(resolve_media_tools(candidate).await);
+        });
+        self
     }
 
     /// 注册进度监听器。
@@ -106,17 +130,42 @@ impl DownloadManager {
         filename: &str,
         expected_sha256: &str,
     ) -> Result<DownloadTask, ServiceError> {
+        self.add_download_with_referrer(
+            url,
+            destination,
+            connections,
+            filename,
+            expected_sha256,
+            "",
+        )
+    }
+
+    /// 排队一个带来源页的下载。来源页会作为 Referer 传给下载 Provider。
+    pub fn add_download_with_referrer(
+        &self,
+        url: &str,
+        destination: &Path,
+        connections: Option<u32>,
+        filename: &str,
+        expected_sha256: &str,
+        referrer: &str,
+    ) -> Result<DownloadTask, ServiceError> {
         let task = {
             let state = self.inner.state();
             let connections =
                 connections.unwrap_or(state.settings.default_connections.max(1) as u32);
-            DownloadTask::create(
+            let mut task = DownloadTask::create(
                 url,
                 destination,
                 connections,
                 filename.trim(),
                 expected_sha256,
-            )?
+            )?;
+            let referrer = referrer.trim();
+            if !referrer.is_empty() {
+                task.referrer = Some(referrer.to_string());
+            }
+            task
         };
         {
             let mut state = self.inner.state();
@@ -309,14 +358,30 @@ impl ManagerInner {
         })
     }
 
+    /// 根据当前设置为一次下载解析 HLS 后处理配置。
+    /// 工具链未就绪或 ffmpeg 不可用时返回 `None`（保留裸流）。
+    fn build_postprocess(&self, transcode: bool) -> Option<PostProcess> {
+        let tools = self.media.get()?;
+        let ffmpeg = tools.ffmpeg.clone()?;
+        let mode = match (transcode, &tools.hw_encoder) {
+            // 仅当用户开启转码且实测到可用 GPU 编码器时才转码，否则无损封装。
+            (true, Some(encoder)) => FinalizeMode::Transcode {
+                video_encoder: encoder.clone(),
+            },
+            _ => FinalizeMode::Remux,
+        };
+        Some(PostProcess { ffmpeg, mode })
+    }
+
     /// 为 `task` 派生一个引擎，跟踪其句柄并在完成时回收。
     fn launch(self: &Arc<Self>, task: DownloadTask) {
-        let (retry_count, connections, proxy) = {
+        let (retry_count, connections, proxy, transcode) = {
             let state = self.state();
             (
                 state.settings.retry_count.max(0) as u32,
                 task.connections,
                 proxy_from_settings(&state.settings),
+                state.settings.hls_transcode,
             )
         };
         let client = build_client(connections, &proxy).unwrap_or_default();
@@ -328,7 +393,8 @@ impl ManagerInner {
             client,
             self.make_callback(),
             retry_count,
-        );
+        )
+        .with_postprocess(self.build_postprocess(transcode));
         let handle = engine.handle();
         self.state().engines.insert(task.id.clone(), handle);
 
@@ -346,6 +412,33 @@ impl ManagerInner {
             inner.wakeup.notify_one();
         });
     }
+}
+
+/// 解析 HLS 后处理工具链：优先用打包的 `candidate`，其次用 PATH 上的
+/// `ffmpeg`；二者都不可用则禁用后处理。可用时进一步实测硬件编码器。
+async fn resolve_media_tools(candidate: Option<PathBuf>) -> MediaTools {
+    let mut ffmpeg = None;
+    if let Some(path) = candidate {
+        if postprocess::probe_available(&path).await {
+            ffmpeg = Some(path);
+        }
+    }
+    if ffmpeg.is_none() {
+        let on_path = PathBuf::from("ffmpeg");
+        if postprocess::probe_available(&on_path).await {
+            ffmpeg = Some(on_path);
+        }
+    }
+    let hw_encoder = match &ffmpeg {
+        Some(path) => postprocess::detect_hw_encoder(path).await,
+        None => None,
+    };
+    match (&ffmpeg, &hw_encoder) {
+        (None, _) => log::info!("未找到可用的 ffmpeg，HLS 下载将保留原始裸流"),
+        (Some(_), Some(encoder)) => log::info!("HLS 后处理就绪，检测到硬件编码器 {encoder}"),
+        (Some(_), None) => log::info!("HLS 后处理就绪（仅封装，未检测到可用 GPU 编码器）"),
+    }
+    MediaTools { ffmpeg, hw_encoder }
 }
 
 /// 将 [`AppSettings`] 的代理部分转换为 [`ProxyConfig`]。

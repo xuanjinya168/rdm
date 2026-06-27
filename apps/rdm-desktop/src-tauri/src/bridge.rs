@@ -48,6 +48,8 @@ pub struct DownloadRequest {
     #[serde(default)]
     pub filename: Option<String>,
     #[serde(default)]
+    pub referrer: Option<String>,
+    #[serde(default)]
     #[allow(dead_code)]
     pub destination: Option<String>,
     #[serde(default)]
@@ -64,6 +66,8 @@ pub struct ExternalDownload {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub referrer: Option<String>,
 }
 
 /// `POST /media-candidates` 的请求体：浏览器扩展嗅探到的一批媒体候选。
@@ -99,6 +103,8 @@ pub struct MediaCandidateInput {
     pub duration: Option<f64>,
     #[serde(default)]
     pub bytes: Option<u64>,
+    #[serde(default)]
+    pub page_url: Option<String>,
 }
 
 /// 推送给前端的批量确认载荷。
@@ -108,6 +114,8 @@ pub struct SniffedMedia {
     pub candidates: Vec<SniffedCandidate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_url: Option<String>,
 }
 
 /// 校验后的单个候选（确保 url 为合法 http/https）。
@@ -129,6 +137,8 @@ pub struct SniffedCandidate {
     pub duration: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_url: Option<String>,
 }
 
 /// `GET /health` 的响应。
@@ -200,7 +210,11 @@ fn validate_request(req: &DownloadRequest) -> Result<ExternalDownload, ErrorResp
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
-    Ok(ExternalDownload { url, filename })
+    Ok(ExternalDownload {
+        url,
+        filename,
+        referrer: clean_http_url(&req.referrer),
+    })
 }
 
 /// 去除首尾空白；为空或超过 `max` 字符则返回 None。
@@ -211,6 +225,14 @@ fn clean_field(s: &Option<String>, max: usize) -> Option<String> {
         .map(str::to_string)
 }
 
+fn clean_http_url(s: &Option<String>) -> Option<String> {
+    let value = s.as_deref()?.trim();
+    if value.is_empty() || value.len() > MAX_URL_LEN || !is_http_url(value) {
+        return None;
+    }
+    Some(value.to_string())
+}
+
 /// 校验批量候选并施加防护上限：
 /// - 过滤非 http/https、空 URL、超长 URL（>`MAX_URL_LEN`）；
 /// - 文件名/kind/ext 超长按缺省处理（不截断文件名以免破坏扩展名）；
@@ -218,6 +240,7 @@ fn clean_field(s: &Option<String>, max: usize) -> Option<String> {
 /// 全部无效时返回错误。拆成纯函数以便单测；不在此时创建任务。
 fn validate_media_candidates(req: &MediaCandidatesRequest) -> Result<SniffedMedia, ErrorResponse> {
     let mut candidates = Vec::new();
+    let page_url = clean_http_url(&req.page_url);
     for c in &req.candidates {
         if candidates.len() >= MAX_CANDIDATES {
             break; // 超量：只取前 MAX_CANDIDATES 个有效候选
@@ -235,6 +258,7 @@ fn validate_media_candidates(req: &MediaCandidatesRequest) -> Result<SniffedMedi
             height: c.height,
             duration: c.duration,
             bytes: c.bytes,
+            page_url: clean_http_url(&c.page_url).or_else(|| page_url.clone()),
         });
     }
 
@@ -254,6 +278,7 @@ fn validate_media_candidates(req: &MediaCandidatesRequest) -> Result<SniffedMedi
     Ok(SniffedMedia {
         candidates,
         page_title,
+        page_url,
     })
 }
 
@@ -393,6 +418,7 @@ mod tests {
         DownloadRequest {
             url: url.to_string(),
             filename: None,
+            referrer: None,
             destination: None,
             connections: None,
             sha256: None,
@@ -407,10 +433,24 @@ mod tests {
     }
 
     #[test]
+    fn validate_preserves_valid_referrer() {
+        let mut request = req("https://cdn.example.com/video/index.m3u8");
+        request.referrer = Some("https://jable.tv/videos/example/".to_string());
+
+        let payload = validate_request(&request).unwrap();
+
+        assert_eq!(
+            payload.referrer.as_deref(),
+            Some("https://jable.tv/videos/example/")
+        );
+    }
+
+    #[test]
     fn validate_preserves_filename() {
         let request = DownloadRequest {
             url: "https://example.com/video.mp4".to_string(),
             filename: Some("  movie.mp4  ".to_string()),
+            referrer: None,
             destination: None,
             connections: None,
             sha256: None,
@@ -424,6 +464,7 @@ mod tests {
         let request = DownloadRequest {
             url: "https://example.com/x.bin".to_string(),
             filename: Some("   ".to_string()),
+            referrer: None,
             destination: None,
             connections: None,
             sha256: None,
@@ -450,14 +491,17 @@ mod tests {
         let payload = ExternalDownload {
             url: "https://example.com/a".to_string(),
             filename: Some("a.zip".to_string()),
+            referrer: Some("https://example.com/page".to_string()),
         };
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["url"], "https://example.com/a");
         assert_eq!(json["filename"], "a.zip");
+        assert_eq!(json["referrer"], "https://example.com/page");
 
         let no_name = ExternalDownload {
             url: "https://example.com/b".to_string(),
             filename: None,
+            referrer: None,
         };
         let json = serde_json::to_value(&no_name).unwrap();
         assert!(json.get("filename").is_none());
@@ -473,6 +517,7 @@ mod tests {
             height: None,
             duration: None,
             bytes: None,
+            page_url: None,
         }
     }
 
@@ -539,12 +584,19 @@ mod tests {
                 height: Some(720),
                 duration: Some(12.5),
                 bytes: Some(4096),
+                page_url: Some("https://example.com/page".to_string()),
             }],
             page_title: Some("T".to_string()),
+            page_url: Some("https://example.com/page".to_string()),
         };
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["pageTitle"], "T");
+        assert_eq!(json["pageUrl"], "https://example.com/page");
         assert_eq!(json["candidates"][0]["url"], "https://example.com/a.mp4");
+        assert_eq!(
+            json["candidates"][0]["pageUrl"],
+            "https://example.com/page"
+        );
         assert_eq!(json["candidates"][0]["width"], 1280);
 
         // 可选字段为 None 时不应出现在序列化结果中。
@@ -558,11 +610,14 @@ mod tests {
                 height: None,
                 duration: None,
                 bytes: None,
+                page_url: None,
             }],
             page_title: None,
+            page_url: None,
         };
         let json = serde_json::to_value(&minimal).unwrap();
         assert!(json.get("pageTitle").is_none());
+        assert!(json.get("pageUrl").is_none());
         assert!(json["candidates"][0].get("width").is_none());
     }
 

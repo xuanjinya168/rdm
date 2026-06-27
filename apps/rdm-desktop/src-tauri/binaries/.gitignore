@@ -1,0 +1,4 @@
+# 打包随附的 ffmpeg 二进制不入库（体积大、按平台/版本获取）。
+# 用 scripts/fetch-ffmpeg.ps1 下载到此目录后再 `tauri build`。
+*
+!.gitignore

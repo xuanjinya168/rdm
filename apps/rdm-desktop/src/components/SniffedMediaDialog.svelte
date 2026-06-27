@@ -67,7 +67,7 @@
     if (!c || queued.has(index) || busy.has(index)) return false;
     busy = new Set(busy).add(index);
     try {
-      await onDownload({ url: c.url, filename: c.filename });
+      await onDownload({ url: c.url, filename: c.filename, referrer: c.pageUrl || media?.pageUrl });
       queued = new Set(queued).add(index);
       const next = new Set(selected);
       next.delete(index);

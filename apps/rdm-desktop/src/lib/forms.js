@@ -52,6 +52,7 @@ export function validateSettingsForm(values) {
       speed_limit_bytes: Number(values.speedKb) * 1024,
       clipboard_monitoring: values.clipboard,
       minimize_to_tray: values.tray,
+      hls_transcode: values.hlsTranscode,
       theme: values.theme,
       proxy_enabled: values.proxyEnabled,
       proxy_url: proxyUrl,

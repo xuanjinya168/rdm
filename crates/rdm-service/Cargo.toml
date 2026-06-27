@@ -13,6 +13,7 @@ rdm-engine.workspace = true
 reqwest.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "rt"] }
 thiserror.workspace = true
+log.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

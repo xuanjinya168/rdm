@@ -10,10 +10,17 @@ import { DOWNLOADS_URL, HEALTH_URL, MEDIA_CANDIDATES_URL } from "./config.js";
  * @param {string} url - http/https 下载地址。
  * @param {object} [opts]
  * @param {string} [opts.filename] - 建议文件名。
+ * @param {string} [opts.referrer] - 来源页面，用于需要 Referer 的媒体源。
+ * @param {string} [opts.pageUrl] - referrer 的兼容别名。
  * @returns {Promise<{ok: true, accepted: true} | {ok: false, error: string}>}
  */
 export async function postDownload(url, opts = {}) {
-  const body = { url, ...(opts.filename ? { filename: opts.filename } : {}) };
+  const referrer = opts.referrer || opts.pageUrl || "";
+  const body = {
+    url,
+    ...(opts.filename ? { filename: opts.filename } : {}),
+    ...(referrer ? { referrer } : {}),
+  };
   try {
     const res = await fetch(DOWNLOADS_URL, {
       method: "POST",

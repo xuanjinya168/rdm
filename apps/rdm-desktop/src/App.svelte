@@ -60,6 +60,7 @@
   let addOpen = $state(false);
   let addUrl = $state("");
   let addFilename = $state("");
+  let addReferrer = $state("");
   let settingsOpen = $state(false);
   let sniffedMedia = $state(null); // 浏览器扩展嗅探到的批量候选：{ candidates, pageTitle? } 或 null
   let deleteTargets = $state([]);
@@ -230,7 +231,7 @@
         await register(onNewDownload(() => openAdd("")));
         // 浏览器扩展拦截的下载：弹出确认框，预填扩展提供的文件名。
         await register(
-          onExternalDownload(({ url, filename }) => openAdd(url, filename ?? "")),
+          onExternalDownload(({ url, filename, referrer }) => openAdd(url, filename ?? "", referrer ?? "")),
         );
         // 浏览器扩展嗅探到的一批媒体：弹出批量确认对话框。
         await register(onSniffedMedia((payload) => (sniffedMedia = payload)));
@@ -306,10 +307,11 @@
     }
   }
 
-  function openAdd(url, filename = "") {
+  function openAdd(url, filename = "", referrer = "") {
     page = "downloads";
     addUrl = url;
     addFilename = filename;
+    addReferrer = referrer;
     addOpen = true;
   }
 
@@ -325,9 +327,10 @@
   }
 
   async function submitAdd(values) {
-    const task = await addDownload(values);
+    const task = await addDownload({ ...values, referrer: addReferrer });
     upsert(task);
     addOpen = false;
+    addReferrer = "";
   }
 
   async function downloadMedia(values) {
