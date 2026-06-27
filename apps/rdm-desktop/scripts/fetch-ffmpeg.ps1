@@ -5,8 +5,9 @@
 
 .DESCRIPTION
     Places a static Windows ffmpeg.exe at src-tauri/binaries/ffmpeg.exe so that
-    tauri.conf.json's bundle.resources can package it. The binary is NOT checked
-    into git; run this once before `npm run tauri build` (or in CI).
+    tauri.conf.json's bundle.resources can package it. The binary is committed
+    via Git LFS, so a normal checkout already has it; use this script to fetch
+    it on a fresh clone without LFS, or to update to a newer build.
 
     Defaults to BtbN's GPL build (includes the hardware encoders). Pass -Url to
     pin a specific version.
