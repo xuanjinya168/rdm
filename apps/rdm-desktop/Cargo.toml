@@ -1,0 +1,35 @@
+[workspace]
+
+[package]
+name = "rdm-desktop"
+version = "0.3.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "RDM 桌面应用（GPUI）"
+
+[dependencies]
+open-gpui = "0.2"
+rdm-domain = { path = "../../crates/rdm-domain" }
+rdm-storage = { path = "../../crates/rdm-storage" }
+rdm-http = { path = "../../crates/rdm-http" }
+rdm-service = { path = "../../crates/rdm-service" }
+rdm-resolver = { path = "../../crates/rdm-resolver" }
+rdm-bridge = { path = "../../crates/rdm-bridge" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util"] }
+serde_json = "1"
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+arboard = "3"
+notify-rust = "4"
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+open-gpui-platform = { version = "0.2", features = ["wayland", "x11"] }
+tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+
+[target.'cfg(not(any(target_os = "linux", target_os = "freebsd")))'.dependencies]
+open-gpui-platform = "0.2"
+tray-icon = { version = "0.26", default-features = false }
+rfd = "0.17"

@@ -2,6 +2,15 @@
 
 本项目的重要变更记录在此文件中。
 
+## 0.3.0（2026-10-16）
+
+### 变更
+
+- 桌面界面从 Tauri 2 + Svelte 5 换成 Open GPUI 0.2。窗口直接调用 `DownloadManager`、媒体解析器和本地 HTTP 桥，不再经过 WebView 或 Tauri 命令。
+- 浏览器桥抽到 `crates/rdm-bridge`。协议保持 `127.0.0.1:43721` 上的 `GET /health`、`POST /downloads`、`POST /media-candidates`，并增加 `POST /activate`，供第二个进程把已有窗口带到前台。
+- 发布产物改为单个可执行文件。不再生成 MSI / NSIS 安装包。
+- HLS 转码使用可执行文件旁边的 `ffmpeg`，否则使用 `PATH` 上的 `ffmpeg`。
+
 ## 0.2.2（2026-06-25）
 
 ### 新增

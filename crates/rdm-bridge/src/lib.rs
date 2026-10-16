@@ -1,12 +1,10 @@
 //! 浏览器扩展与桌面端之间的本地 HTTP 桥（仅监听 127.0.0.1）。
 //!
-//! 由 [`crate::run`] 的 Tauri setup hook 在 tokio 运行时内 spawn。
-//! 浏览器扩展拦截到下载后向本桥 POST 下载 URL；本桥校验通过后，
-//! 通过 `rdm://external-download` 事件把请求交给前端，弹出与
-//! 「新建下载」相同的确认对话框（含文件名/保存位置/连接数），
-//! 用户确认后才开始下载——体验对齐 IDM 的拦截确认流程。
+//! 桌面进程在 tokio 运行时里调用 [`serve`]。扩展拦截到的下载和嗅探到的
+//! 媒体不会直接入库，而是通过通道交给 GPUI 界面，由用户确认后再创建任务。
 
 use std::net::SocketAddr;
+use std::sync::mpsc::Sender;
 
 use axum::extract::{Request, State};
 use axum::http::{HeaderName, HeaderValue, StatusCode};
@@ -15,30 +13,11 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
 
 use rdm_domain::validation::is_http_url;
 
-/// 浏览器扩展连接的固定端口。桌面端与扩展各自定义并保持一致；
-/// v1 不做可配置，以减少改动面。
+/// 浏览器扩展连接的固定端口。桌面端与扩展各自定义并保持一致。
 pub const BRIDGE_PORT: u16 = 43721;
-
-/// 前端事件名：把外部下载请求交给 AddDialog 确认。
-pub const EXTERNAL_DOWNLOAD_EVENT: &str = "rdm://external-download";
-
-/// 前端事件名：把一批嗅探到的媒体候选交给批量确认对话框。
-pub const SNIFFED_MEDIA_EVENT: &str = "rdm://sniffed-media";
-
-/// `/media-candidates` 一次最多接收的有效候选数（防滥用/防误塞）。
-const MAX_CANDIDATES: usize = 100;
-/// 单个候选 URL 的最大长度（字节）。超过视为非法，跳过。
-const MAX_URL_LEN: usize = 4096;
-/// 文件名最大长度（字符）。超过则丢弃文件名，交由下载引擎从 URL 推断。
-const MAX_FILENAME_LEN: usize = 255;
-/// kind/ext 字段的最大长度（字符），超长按缺省（None）处理。
-const MAX_SHORT_FIELD_LEN: usize = 32;
-/// 页面标题最大长度（字符），超长截断（仅用于展示）。
-const MAX_PAGE_TITLE_LEN: usize = 200;
 
 /// `POST /downloads` 的请求体。`url`/`filename` 用于预填确认框，
 /// 其余字段仅为兼容现有请求体形状而接收（v1 不预填）。
@@ -160,21 +139,40 @@ struct ErrorResponse {
     error: String,
 }
 
-/// 启动本地 HTTP 桥。绑定失败仅记录日志并返回——下载管理器与
-/// 桌面 UI 仍可正常工作，只是浏览器扩展无法连入。
-pub async fn serve(app: AppHandle) {
+/// 单次嗅探最多接受的候选数量。
+const MAX_CANDIDATES: usize = 100;
+/// 单个候选 URL 的最大长度（字节）。超过视为非法，跳过。
+const MAX_URL_LEN: usize = 4096;
+/// 文件名最大长度（字符）。超过则丢弃文件名，交由下载引擎从 URL 推断。
+const MAX_FILENAME_LEN: usize = 255;
+/// kind/ext 字段的最大长度（字符），超长按缺省（None）处理。
+const MAX_SHORT_FIELD_LEN: usize = 32;
+/// 页面标题最大长度（字符），超长截断（仅用于展示）。
+const MAX_PAGE_TITLE_LEN: usize = 200;
+
+/// 桥接线程交给界面的命令。界面负责弹窗确认，这里不创建下载任务。
+#[derive(Debug, Clone)]
+pub enum BridgeCommand {
+    /// 把已有窗口带到前台。
+    Activate,
+    /// 预填「新建下载」对话框。
+    ExternalDownload(ExternalDownload),
+    /// 打开批量媒体确认对话框。
+    SniffedMedia(SniffedMedia),
+}
+
+/// 启动本地 HTTP 桥。绑定失败只记录日志并返回，下载器本身仍可使用。
+pub async fn serve(tx: Sender<BridgeCommand>) {
     let router = Router::new()
         .route("/health", get(health))
-        .route(
-            "/downloads",
-            post(create_download_handler).options(no_content),
-        )
+        .route("/downloads", post(create_download).options(no_content))
         .route(
             "/media-candidates",
-            post(create_media_candidates_handler).options(no_content),
+            post(create_media_candidates).options(no_content),
         )
+        .route("/activate", post(activate).options(no_content))
         .layer(middleware::from_fn(cors_layer))
-        .with_state(app);
+        .with_state(tx);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], BRIDGE_PORT));
     let listener = match tokio::net::TcpListener::bind(addr).await {
@@ -237,6 +235,7 @@ fn clean_http_url(s: &Option<String>) -> Option<String> {
 /// - 过滤非 http/https、空 URL、超长 URL（>`MAX_URL_LEN`）；
 /// - 文件名/kind/ext 超长按缺省处理（不截断文件名以免破坏扩展名）；
 /// - 最多保留 `MAX_CANDIDATES` 个有效候选；页面标题截断到 `MAX_PAGE_TITLE_LEN`。
+///
 /// 全部无效时返回错误。拆成纯函数以便单测；不在此时创建任务。
 fn validate_media_candidates(req: &MediaCandidatesRequest) -> Result<SniffedMedia, ErrorResponse> {
     let mut candidates = Vec::new();
@@ -289,25 +288,26 @@ async fn health() -> impl IntoResponse {
     })
 }
 
-async fn create_download_handler(
-    State(app): State<AppHandle>,
+async fn activate(State(tx): State<Sender<BridgeCommand>>) -> StatusCode {
+    let _ = tx.send(BridgeCommand::Activate);
+    StatusCode::NO_CONTENT
+}
+
+async fn create_download(
+    State(tx): State<Sender<BridgeCommand>>,
     Json(req): Json<DownloadRequest>,
 ) -> Response {
     match validate_request(&req) {
         Ok(payload) => {
-            // 把请求交给前端：弹出与新建下载相同的确认对话框，
-            // 用户点「开始下载」后才真正创建任务。
-            if let Err(error) = app.emit(EXTERNAL_DOWNLOAD_EVENT, &payload) {
-                log::error!("Failed to emit {EXTERNAL_DOWNLOAD_EVENT}: {error}");
+            if tx.send(BridgeCommand::ExternalDownload(payload)).is_err() {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: error.to_string(),
+                        error: "桌面界面未在运行。".to_string(),
                     }),
                 )
                     .into_response();
             }
-            show_window(&app);
             (
                 StatusCode::ACCEPTED,
                 Json(AcceptedResponse {
@@ -320,24 +320,21 @@ async fn create_download_handler(
     }
 }
 
-async fn create_media_candidates_handler(
-    State(app): State<AppHandle>,
+async fn create_media_candidates(
+    State(tx): State<Sender<BridgeCommand>>,
     Json(req): Json<MediaCandidatesRequest>,
 ) -> Response {
     match validate_media_candidates(&req) {
         Ok(payload) => {
-            // 把整批候选交给前端：弹出批量确认对话框，用户勾选后才创建任务。
-            if let Err(error) = app.emit(SNIFFED_MEDIA_EVENT, &payload) {
-                log::error!("Failed to emit {SNIFFED_MEDIA_EVENT}: {error}");
+            if tx.send(BridgeCommand::SniffedMedia(payload)).is_err() {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: error.to_string(),
+                        error: "桌面界面未在运行。".to_string(),
                     }),
                 )
                     .into_response();
             }
-            show_window(&app);
             (
                 StatusCode::ACCEPTED,
                 Json(AcceptedResponse {
@@ -348,12 +345,6 @@ async fn create_media_candidates_handler(
         }
         Err(body) => (StatusCode::BAD_REQUEST, Json(body)).into_response(),
     }
-}
-
-/// 显示并聚焦主窗口，使确认对话框立刻可见。
-fn show_window(app: &AppHandle) {
-    use crate::show_main_window;
-    show_main_window(app);
 }
 
 /// OPTIONS 预检直接返回 204，CORS 头由 [`cors_layer`] 统一注入。
@@ -396,7 +387,10 @@ async fn cors_layer(req: Request, next: Next) -> Response {
                 HeaderName::from_static("access-control-allow-origin"),
                 value,
             );
-            headers.insert(HeaderName::from_static("vary"), HeaderValue::from_static("Origin"));
+            headers.insert(
+                HeaderName::from_static("vary"),
+                HeaderValue::from_static("Origin"),
+            );
         }
     }
     headers.insert(
@@ -540,7 +534,10 @@ mod tests {
         ]);
         let payload = validate_media_candidates(&req).unwrap();
         let urls: Vec<_> = payload.candidates.iter().map(|c| c.url.as_str()).collect();
-        assert_eq!(urls, ["https://example.com/a.mp4", "http://example.com/d.jpg"]);
+        assert_eq!(
+            urls,
+            ["https://example.com/a.mp4", "http://example.com/d.jpg"]
+        );
     }
 
     #[test]
@@ -593,10 +590,7 @@ mod tests {
         assert_eq!(json["pageTitle"], "T");
         assert_eq!(json["pageUrl"], "https://example.com/page");
         assert_eq!(json["candidates"][0]["url"], "https://example.com/a.mp4");
-        assert_eq!(
-            json["candidates"][0]["pageUrl"],
-            "https://example.com/page"
-        );
+        assert_eq!(json["candidates"][0]["pageUrl"], "https://example.com/page");
         assert_eq!(json["candidates"][0]["width"], 1280);
 
         // 可选字段为 None 时不应出现在序列化结果中。

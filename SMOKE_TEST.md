@@ -17,30 +17,20 @@
 
 ```powershell
 cd apps/rdm-desktop
-npm ci
-npm run app:build
-npm run smoke:exe
-npm run app:bundle
-npm run smoke:bundle
-npm run smoke:server
+cargo build --release
+cd ..\..
+node tools/smoke-server.mjs
 ```
 
-`smoke:exe` 会在隔离数据目录中驱动真实 release EXE，自动验证首启 URL、Range
-下载、无 Range 降级、暂停继续、异常恢复、单实例、校验、删除和设置持久化。
-当前共 20 项，并覆盖关闭到托盘及第二实例恢复窗口；运行前需退出其他 RDM 实例。
-
-`smoke:bundle` 会管理解包 MSI，并将 NSIS 静默安装到临时目录后卸载。为避免覆盖
-现有安装，检测到已安装的 RDM 时会拒绝运行。
-
-随后启动手工测试服务器；它会打印测试 URL 和每个文件的 SHA-256。保持该窗口运行，在另一个
+测试服务器会打印测试 URL 和每个文件的 SHA-256。保持该窗口运行，在另一个
 PowerShell 窗口启动：
 
 ```powershell
-.\apps\rdm-desktop\src-tauri\target\release\rdm-desktop.exe
+.\apps\rdm-desktop\target\release\rdm-desktop.exe
 ```
 
 建议使用一个空目录作为下载目录。每项填写 `PASS`、`FAIL` 或 `BLOCKED`，失败时
-记录复现步骤和 `%LOCALAPPDATA%\com.rdm.desktop\logs\rdm.log` 中的相关日志。
+记录复现步骤。配置和数据库在 `%LOCALAPPDATA%\RDM`。日志写到启动该程序的终端。
 
 ## 2. 下载核心
 
@@ -75,8 +65,8 @@ http://127.0.0.1:18080/no-range.bin
 | ___ | 设置持久化 | 修改目录、并发数、连接数、限速和主题，重启后保持 |
 | ___ | 全局限速 | 设置明显低于本机速度的限速，下载速度稳定受控 |
 | ___ | 代理 | 配置可用 HTTP 或 SOCKS5 代理，新建任务和媒体解析均经代理 |
-| ___ | 剪贴板 | 开启监控，复制 HTTP/HTTPS URL 后出现预填；关闭后不再触发 |
-| ___ | 托盘 | 开启最小化到托盘，关闭窗口后下载继续；双击托盘恢复 |
+| ___ | 剪贴板 | 开启监控，复制 HTTP/HTTPS URL 后，快速添加框出现该地址；关闭后不再触发 |
+| ___ | 托盘 | 开启最小化到托盘，关闭窗口后下载继续；左键点击托盘图标或选择「显示主窗口」恢复 |
 | ___ | 完成通知 | 下载完成时收到一次通知，不重复发送 |
 | ___ | 失败通知 | 错误任务最终失败时收到一次通知 |
 | ___ | 单实例 | RDM 已运行时再次启动 EXE，不出现第二个主窗口 |
@@ -87,7 +77,7 @@ http://127.0.0.1:18080/no-range.bin
 URL 接管可使用：
 
 ```powershell
-.\apps\rdm-desktop\src-tauri\target\release\rdm-desktop.exe `
+.\apps\rdm-desktop\target\release\rdm-desktop.exe `
   "http://127.0.0.1:18080/range.bin"
 ```
 
@@ -108,23 +98,20 @@ URL 接管可使用：
 - Instagram：`________________`
 - Threads：`________________`
 
-## 5. 安装包
+## 5. 发布文件
 
-分别使用 MSI 和 NSIS 安装包测试：
+0.3.0 起发布的是单个可执行文件，不再打包 MSI / NSIS。
 
 | 结果 | 场景 | 验收 |
 |---|---|---|
-| ___ | MSI 安装 | 普通用户完成安装并可启动 |
-| ___ | NSIS 安装 | 普通用户完成安装并可启动 |
-| ___ | 开始菜单 | 快捷方式名称、图标和启动行为正确 |
-| ___ | 升级安装 | 从上一正式版升级后设置和任务数据保留 |
-| ___ | 卸载 | 应用文件被移除，用户数据处理符合安装程序提示 |
+| ___ | 直接运行 | `rdm-desktop.exe` 可以启动，并在 `%LOCALAPPDATA%\RDM` 写入配置和数据库 |
+| ___ | 升级数据 | 用上一版本留下的 `%LOCALAPPDATA%\RDM` 启动后，设置和任务仍能读取 |
 
 ## 6. 发布结论
 
 - [ ] 所有 P0 项均为 `PASS`
 - [ ] `FAIL` 项已有修复提交并重新验证
-- [ ] MSI 与 NSIS 至少各验证一次
+- [ ] release 可执行文件至少验证一次
 - [ ] 已检查日志中无 panic、数据库错误或持续重试
 
 结论：`PASS / FAIL`
