@@ -1,14 +1,13 @@
 # Contributing
 
-RDM 是一个 Rust workspace 加一个 Tauri + Svelte 桌面应用
-(`apps/rdm-desktop/`)。
+RDM 是一个 Rust workspace，加上独立 workspace 里的 GPUI 桌面应用
+（`apps/rdm-desktop/`）和 MV3 浏览器扩展。
 
 ## 环境
 
-- Rust stable(后端 workspace,见 `rust-toolchain.toml`)
-- Node ≥ 18(桌面前端)
-- 桌面应用的 Rust 端固定 1.88.0(见 `apps/rdm-desktop/src-tauri/rust-toolchain.toml`
-  及该处「构建约束」注释——不要在 `src-tauri` 下 `cargo update`)
+- Rust stable（后端和桌面都用根目录 `rust-toolchain.toml`）
+- Node ≥ 18（浏览器扩展，以及版本号一致性检查）
+- Linux 上编译桌面端需要 Wayland/X11、Vulkan 和 FreeType 开发包
 
 ## 提交前必跑
 
@@ -20,13 +19,13 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-桌面前端:
+桌面:
 
 ```powershell
 cd apps/rdm-desktop
-npm run check
-npm test
-npm run build
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
 ```
 
 准备发布时还需执行根目录的 [`SMOKE_TEST.md`](SMOKE_TEST.md)。

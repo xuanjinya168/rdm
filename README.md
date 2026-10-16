@@ -1,7 +1,7 @@
 # RDM
 
-RDM 是一个 Windows HTTP/HTTPS 多连接分段下载管理器,使用 **Rust** 编写,
-桌面界面基于 **Tauri 2 + Svelte 5**。
+RDM 是一个 Windows HTTP/HTTPS 多连接分段下载管理器，使用 **Rust** 编写。
+桌面界面是原生窗口，基于 **Open GPUI**。
 
 ## 功能
 
@@ -26,13 +26,17 @@ RDM 是一个 Windows HTTP/HTTPS 多连接分段下载管理器,使用 **Rust** 
 │  ├─ rdm-storage    SQLite 持久化 + 迁移
 │  ├─ rdm-http       reqwest 客户端、URL 探测、Provider
 │  ├─ rdm-engine     分段下载引擎(tokio):动态分段、续传、限速、SHA-256
-│  └─ rdm-service    下载队列 / 调度器(DownloadManager)
+│  ├─ rdm-service    下载队列 / 调度器(DownloadManager)
+│  ├─ rdm-resolver   X / Twitter、Instagram、Threads 媒体解析
+│  └─ rdm-bridge     浏览器扩展使用的本地 HTTP 桥
 └─ apps/
-   ├─ rdm-desktop    Svelte 前端(src/)+ Tauri 后端(src-tauri/)
+   ├─ rdm-desktop    GPUI 桌面窗口（独立 workspace，直接调用下载引擎）
    └─ rdm-extension  浏览器扩展(MV3):拦截下载交给桌面端
 ```
 
-依赖方向:`domain ← storage ← http ← engine ← service ← rdm-desktop`。
+依赖方向：`domain ← storage ← http ← engine ← service ← rdm-desktop`，
+`rdm-bridge` 只依赖 `rdm-domain`。桌面进程在界面线程之外启动 tokio，
+再把进度和桥命令送进 GPUI。
 
 ## 构建与测试
 
@@ -48,14 +52,12 @@ cargo fmt --check
 
 ### 桌面应用
 
-需要 Node ≥ 18。Tauri 端的工具链由 `apps/rdm-desktop/src-tauri/rust-toolchain.toml`
-固定(详见该目录 README 的「构建约束」)。
+需要 Rust stable。桌面 crate 不在根 workspace 里，避免后端测试编译 GPUI。
 
 ```powershell
 cd apps/rdm-desktop
-npm install
-npm run app:dev      # 开发(热重载)
-npm run app:build    # 生成自包含 EXE: src-tauri/target/release/rdm-desktop.exe
+cargo test
+cargo build --release   # target/release/rdm-desktop.exe
 ```
 
 详见 [`apps/rdm-desktop/README.md`](apps/rdm-desktop/README.md)。

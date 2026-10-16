@@ -5,15 +5,11 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
-function readJson(path) {
-  return JSON.parse(readFileSync(join(root, path), "utf8"));
-}
-
 function tomlVersion(path, section) {
   const source = readFileSync(join(root, path), "utf8");
   const sectionPattern = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(
-    `\\[${sectionPattern}\\][\\s\\S]*?^version\\s*=\\s*\"([^\"]+)\"`,
+    `\\[${sectionPattern}\\][\\s\\S]*?^version\\s*=\\s*"([^"]+)"`,
     "m",
   ).exec(source);
   assert.ok(match, `No version found in [${section}] of ${path}`);
@@ -21,10 +17,8 @@ function tomlVersion(path, section) {
 }
 
 const versions = new Map([
-  ["apps/rdm-desktop/package.json", readJson("apps/rdm-desktop/package.json").version],
-  ["apps/rdm-desktop/src-tauri/tauri.conf.json", readJson("apps/rdm-desktop/src-tauri/tauri.conf.json").version],
   ["Cargo.toml [workspace.package]", tomlVersion("Cargo.toml", "workspace.package")],
-  ["apps/rdm-desktop/src-tauri/Cargo.toml [package]", tomlVersion("apps/rdm-desktop/src-tauri/Cargo.toml", "package")],
+  ["apps/rdm-desktop/Cargo.toml [package]", tomlVersion("apps/rdm-desktop/Cargo.toml", "package")],
 ]);
 
 const unique = new Set(versions.values());

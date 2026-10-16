@@ -69,8 +69,8 @@ impl DownloadProvider for HttpDownloadProvider {
 
     fn prepare(&self, task: &DownloadTask) -> Result<PreparedDownload, HttpError> {
         let mut prepared = PreparedDownload::new(task.url.clone());
-        if let Some(referer) =
-            site_referer(&task.url).or_else(|| task.referrer.as_deref().and_then(valid_http_referrer))
+        if let Some(referer) = site_referer(&task.url)
+            .or_else(|| task.referrer.as_deref().and_then(valid_http_referrer))
         {
             prepared
                 .headers
@@ -137,7 +137,10 @@ fn site_root_referer(host: &str) -> Option<&'static str> {
 
 /// `host` 是否等于 `root` 或其子域（`*.root`）。零分配的后缀匹配。
 fn host_matches(host: &str, root: &str) -> bool {
-    host == root || host.strip_suffix(root).is_some_and(|prefix| prefix.ends_with('.'))
+    host == root
+        || host
+            .strip_suffix(root)
+            .is_some_and(|prefix| prefix.ends_with('.'))
 }
 
 /// 有序的 Provider 列表；首个能处理该 URL 的 Provider 胜出。
@@ -217,10 +220,19 @@ mod tests {
         let provider = HttpDownloadProvider;
         for (url, referer) in [
             ("https://v2.ddys.ai/v2/movie/file.mp4", "https://ddys.ai/"),
-            ("https://video.ddys.app/v2/movie/file.mp4", "https://ddys.app/"),
+            (
+                "https://video.ddys.app/v2/movie/file.mp4",
+                "https://ddys.app/",
+            ),
             ("https://cdn.ddys.io/v2/movie/file.mp4", "https://ddys.io/"),
-            ("https://media.ddys.tv/v2/movie/file.mp4", "https://ddys.tv/"),
-            ("https://v1.jable.tv/hls/video/index.m3u8", "https://jable.tv/"),
+            (
+                "https://media.ddys.tv/v2/movie/file.mp4",
+                "https://ddys.tv/",
+            ),
+            (
+                "https://v1.jable.tv/hls/video/index.m3u8",
+                "https://jable.tv/",
+            ),
             (
                 "https://movie.douban.com/subject/123/",
                 "https://movie.douban.com/",

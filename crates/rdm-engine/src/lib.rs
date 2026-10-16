@@ -13,6 +13,6 @@ pub mod rate_limit;
 pub mod sparse;
 
 pub use engine::{DownloadEngine, EngineHandle, UpdateCallback};
-pub use postprocess::{FinalizeMode, PostProcess};
 pub use error::EngineError;
+pub use postprocess::{FinalizeMode, PostProcess};
 pub use rate_limit::RateLimiter;

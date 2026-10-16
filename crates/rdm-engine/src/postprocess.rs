@@ -205,6 +205,7 @@ async fn probe_encoder(ffmpeg: &Path, encoder: &str) -> bool {
 }
 
 fn ffmpeg_command(ffmpeg: &Path) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new(ffmpeg);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);

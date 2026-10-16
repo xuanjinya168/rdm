@@ -314,7 +314,10 @@ mod tests {
         // 崩溃前持久化的活动状态在恢复时变为暂停。
         assert_eq!(loaded.status, TaskStatus::Paused);
         assert_eq!(loaded.filename, "file.bin");
-        assert_eq!(loaded.referrer.as_deref(), Some("https://example.test/page"));
+        assert_eq!(
+            loaded.referrer.as_deref(),
+            Some("https://example.test/page")
+        );
         assert_eq!(loaded.total_size, Some(100));
         assert_eq!(
             segments.iter().map(|s| s.downloaded).collect::<Vec<_>>(),

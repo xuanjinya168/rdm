@@ -28,6 +28,7 @@ impl ProxyConfig {
 
 /// 每平台解析器。实现将帖子 URL 转换为其包含的媒体文件集合。
 /// 它们必须可跨工作线程共享。
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait MediaResolver: Send + Sync {
     /// 此解析器服务的平台的稳定标识符。

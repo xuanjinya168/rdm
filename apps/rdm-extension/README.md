@@ -4,7 +4,7 @@
 支持自动拦截下载、右键菜单手动交给 RDM，以及**主动嗅探当前页面的图片/音视频资源**
 并发送到桌面端下载。
 
-> 实验性功能。需要 RDM 桌面端（≥ 0.2.2）同时在运行。
+> 实验性功能。需要 RDM 桌面端（≥ 0.3.0）同时在运行。
 
 ## 工作原理
 
@@ -15,14 +15,13 @@
                                                                         （弹出确认框）
 ```
 
-- 桌面端在启动时（Tauri setup hook）用 axum 起这个桥，绑定 `127.0.0.1:43721`。
+- 桌面端启动时用 axum 起这个桥，绑定 `127.0.0.1:43721`。
 - 扩展拦截到下载后，向 `POST /downloads` 提交 `{ url, filename? }`。
-- 桥返回 **202 Accepted**，并通过 `rdm://external-download` 事件让桌面端弹出与「新建下载」
-  相同的确认框（文件名/保存位置/连接数），用户点「开始下载」后才开始下载——
+- 桥返回 **202 Accepted**，并把请求交给 GPUI 的「新建下载」确认框（文件名/保存位置/连接数）。用户点「开始下载」后才开始下载——
   **不会静默抢走下载**，体验对齐 IDM 的拦截确认。
 - `GET /health` 返回 `{"status":"ok","version":"…"}`，扩展用它检测桌面端是否在线。
 
-桥固定端口 `43721`，与 `apps/rdm-desktop/src-tauri/src/bridge.rs` 中的 `BRIDGE_PORT` 一致。
+桥固定端口 `43721`，与 `crates/rdm-bridge/src/lib.rs` 中的 `BRIDGE_PORT` 一致。
 v1 不做可配置端口。
 
 > **为什么不用 IDM 那种 native messaging？** Native messaging 需要写注册表 +
